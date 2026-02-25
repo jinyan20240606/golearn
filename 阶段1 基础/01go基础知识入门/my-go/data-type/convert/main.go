@@ -36,6 +36,46 @@ func main() {
 	}
 
 	// 字符串转换为float类型，转化为bool类型
+	var str1 = "123.456"
+	var num1, err1 = strconv.ParseFloat(str1, 64)
+	if err1 != nil {
+		println("转换失败")
+	} else {
+		println(num1)
+	}
+	// 进制转化：字符串转换为Int类型，parseInt函数的第二个参数是进制，第三个参数是位数，返回值是int64类型
+	var str2 = "123"
+	var num3, err3 = strconv.ParseInt(str2, 10, 64)
+	if err3 != nil {
+		println("转换失败")
+	} else {
+		println(num3)
+	}
+
+	// 字符串转换为布尔类型转换
+	// strconv.ParseBool("true") 成功将字符串转成布尔值 true
+	// strconv.FormatBool(true) 成功将布尔值转成字符串 "true"
+	var str3 = "true" // "1" => true  "false" => false  "0" => false
+	var b222, err2 = strconv.ParseBool(str3)
+	if err2 != nil {
+		println("转换失败")
+	} else {
+		println(b222)
+	}
+
+	// format函数：基本类型统一转字符串，返回值是string类型
+	var b3 = true
+	var str4 = strconv.FormatBool(b3) // 结果："true"
+	println(str4)
+	// formatInt函数：将数字转换为字符串，返回值是string类型
+	var a3 = 123
+	var str5 = strconv.FormatInt(int64(a3), 10) // 结果："123"
+	println(str5)
+	// formatFloat函数：将数字转换为字符串，返回值是string类型
+	var a4 = 123.456
+	// 'f' 表示使用小数点表示法，'.' 表示小数点，2 表示小数点后保留的位数，64 表示转换的位数
+	var str6 = strconv.FormatFloat(float64(a4), 'f', 2, 64) // 结果："123.46"
+	println(str6)
 
 }
 
