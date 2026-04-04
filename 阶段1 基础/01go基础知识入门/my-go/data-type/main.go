@@ -54,7 +54,7 @@ func main() {
 	// 字节类型：针对于字节单独起的别名的意思，相当于c语言中的char类型，本质就是个int类型
 	var a33 byte = 'A'    // byte 是 uint8 的别名，'A' 的 ASCII 码是 65
 	var b33 rune = '中'    // rune 是 int32 的别名，'中' 的 Unicode 码点是 20013
-	fmt.Println(a33, b33) // 输出：65 20013，输出的是对应的数值，而不是字符本身，要输出字符本身需要使用 fmt.Printf("%c", a33) 或 fmt.Printf("%c", b33)
+	fmt.Println(a33, b33) // 输出：65 20013，输出的是对应的数值，而不是字符本身，要输出字符本身需要使用 fmt.Printf("%c", a33) 或 fmt.Printf("%c", b33)或String(a33) 或 String(b33)
 	var c33 byte
 	c33 = 'a' + 1    // a的ASCII码加1，a的ASCII码为97
 	fmt.Println(c33) // 输出：98,就代表b的ASCII码
