@@ -21,4 +21,12 @@ func main() {
 	} else {
 		fmt.Println("未成年")
 	}
+
+	// if内可以写逻辑代码用分号隔开
+	if age := 18; age >= 18 {
+		fmt.Println("成年了")
+	} else {
+		fmt.Println("未成年")
+	} // if 里面可以定义变量，但是只能在if里面使用
+	// if 里面定义的变量，只能在if里面使用，不能在if外面使用
 }
