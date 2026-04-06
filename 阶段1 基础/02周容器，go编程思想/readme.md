@@ -1,6 +1,6 @@
 # jilu
 
 1. go 语言 提供了哪些集合类型的数据结构：数组，切片slice，映射map，集合，通道  ==== （slice和map最常用，重点掌握）
-2. ![alt text](image.png)
+2. ![alt text](image.png): 切片的原理图
 3. go语言中有一个空的类型叫：nil，nil可以用来表示map、slice、channel等引用类型的零值，表示它们没有被初始化或者没有分配内存空间。（类似于js的null）
    1. 当你声明一个map但没有使用make函数初始化它时，这个map的值就是nil。对于一个nil map，你不能直接向它添加键值对，因为它没有底层的数据结构来存储这些数据。如果你尝试向一个nil map添加键值对，会导致运行时错误（panic）。因此，在使用map之前，必须先使用make函数或字面量语法来初始化它，以确保它不是nil。
