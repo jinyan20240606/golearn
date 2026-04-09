@@ -3,20 +3,28 @@ package main
 import "fmt"
 
 // 指针的用法和定义
-/**
- * 指针就是存 “内存地址” 的变量，它指向真正的值。
-	普通变量：存值
-	指针变量：存地址
+// 指针在 Go 里就是一种独立、明确的数据类型，
+// 在 Go 里：
+// int、string、bool 是类型
+// *int、*string、*Person 也是类型，它们叫指针类型，如*int 存一个 int 变量的内存地址
 
-1. 在 Go 里，所有数据类型都有对应的指针类型。int → *int、string → *string、struct → *struct、map → *map、func → *func 全都有。
-	只要是 Go 里的值类型，就一定能：用 &x 取地址，得到对应的指针类型 *T
-	--- 写法统一：T 对应 *T
-2. 只有一个例外：nil 本身没有指针，nil 是一个标志，不是类型，所以没有 *nil。
-3. 容易混淆的点：引用类型本身已经 “像指针”，，，像 slice、map、chan、func、interface它们底层就是指针结构，所以平时很少写 *[]int、*map，但语法上依然存在。，var s []int
+/*
+*
+
+  - 指针就是存 “内存地址” 的变量，它指向真正的值。
+    普通变量：存值
+    指针变量：存地址
+
+    1. 在 Go 里，所有数据类型都有对应的指针类型。int → *int、string → *string、struct → *struct、map → *map、func → *func 全都有。
+    只要是 Go 里的值类型，就一定能：用 &x 取地址，得到对应的指针类型 *T
+    --- 写法统一：T 对应 *T
+    2. 只有一个例外：nil 本身没有指针，nil 是一个标志，不是类型，所以没有 *nil。
+    3. 容易混淆的点：引用类型本身已经 “像指针”，，，像 slice、map、chan、func、interface它们底层就是指针结构，所以平时很少写 *[]int、*map，但语法上依然存在。，var s []int
+
 var p *[]int = &s  // 完全合法
 
-
 符号规则：
+
 	*数据类型：定义指针数据类型如*int 是 int 类型指针，定义各个数据类的指针
 	&变量 = 取地址
 	*指针 = 取值
