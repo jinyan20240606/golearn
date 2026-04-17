@@ -1,29 +1,5 @@
 package main
 
-/**
-   数据类型参考文章：https://juejin.cn/post/7225535217339170871
-   https://www.runoob.com/go/go-data-types.html
-   Go 语言中的数据类型主要分为以下几类：
-1. 基本数据类型：
-	- 数值类型：整型【整数（int、int8、int16、int32、int64）、无符号整数（uint、uint8、uint16、uint32、uint64）】、浮点数（float32、float64）、复数（complex64、complex128）。
-	- 布尔值：表示真假的值，通常用于条件判断。
-	- 字符串类型：string 表示单个字符，通常使用单引号括起来。
-    - 字符类型：byte、rune。
-		- byte：Go 语言的语法规定（type byte = uint8），和 ASCII 码无关 —— 不管是否存储 ASCII 码，byte 本质都是 8 位无符号整数，取值范围 0~255；
-			- ASCII 码是 byte 的典型场景：因为 ASCII 码的取值范围（0~127）刚好落在 byte（uint8）的取值范围内（0~255），所以 byte 天然适合存储 ASCII 字符，这是 “场景适配” 而非 “语法原因”
-			- ASCII码主要用来存储英文的码点的，中文是无法表示的，所以 byte 不能存储中文字符。
-		- rune等同于int32，用于表示UTF-8字符串的Unicode码点。
-			- rune 本质上是 int32，表示 UTF-8 编码的字符。它的范围更大，专门表示「Unicode 码点」（全球所有语言的字符编码），包括中文、日文、Emoji 等无法用 byte（uint8）存储的字符
-
-
-2. 复合数据类型：包括数组（array）、切片（slice）、结构体（struct）和映射（map）。
-3. 引用数据类型：包括指针（pointer）和接口（interface）。
-4. 函数类型：函数也是一种数据类型，可以作为变量传递和返回。
-5. 通道类型：用于在 goroutine 之间进行通信的通道（channel）。
-
-Go 语言还支持用户定义的类型，可以通过 type 关键字创建新的类型别名或结构体类型。
-*/
-
 import "fmt"
 
 func main() {
