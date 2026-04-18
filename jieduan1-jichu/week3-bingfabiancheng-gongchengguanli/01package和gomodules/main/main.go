@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-
-	// 1. 相对路径导入（当前目录下）
-	course "../user" // course是模块别名
+	// 1. 相对路径导入（当前目录下），当存在go.mod 此方法就不可用
+	// course "../user" // course是模块别名
 	// 2. 模块路径导入（需先初始化 go.mod）
+	course "golearn-01package-gomodules/user"
 	// 注意：Go模块路径不支持中文，需将目录重命名为英文
 	// 示例：go mod init golearn-project
 	// 然后使用：import "golearn-project/week03/01package/user"
