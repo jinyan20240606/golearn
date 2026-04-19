@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// go modules包管理机制： 添加依赖，删除未使用的依赖项
 func main() {
 	r := gin.Default()
 	r.GET("/", func(c *gin.Context) {
