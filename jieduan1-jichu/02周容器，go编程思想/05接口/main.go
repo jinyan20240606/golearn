@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 // / 接口数据类型
 
 // 1. 接口的定义语法 = 方法的集合（只定义要做什么，不定义怎么做）
@@ -36,6 +38,15 @@ func (p Person) Fly() {
 // 实现接口的检验标准：看能不能把一个接口类型的变量赋值为一个结构体类型的变量，如果能赋值成功，那么这个结构体就实现了这个接口
 
 func main() {
+	// var name string
+	// fmt.Scan(&name) // 读取输入
+	err := fmt.Errorf("参数错误：%d", 10)
+
+	fmt.Println(err)
+	// 按你指定的格式，从控制台读取用户输入，精准匹配格式后赋值给变量
+	var n int
+	fmt.Scanf("年龄：%d", &n)
+	fmt.Println("年龄：", n)
 	var duck Duck
 	duck = Person{Name: "John"}
 	duck.Quack()
