@@ -73,4 +73,7 @@ func main() {
 	g1 := a1 <= b1
 	h1 := a1 >= b1
 	println(c1, d1, e1, f1, g1, h1) // 输出：false true true false false false
+
+	// 注意细节
+	// 1. 在 Go 语言中，不等号只有一种写法，即 !=。这与 JavaScript 不同，Go 是静态强类型语言，不存在“宽松相等”（==/!=）和“严格相等”（===/!==）的区别
 }
