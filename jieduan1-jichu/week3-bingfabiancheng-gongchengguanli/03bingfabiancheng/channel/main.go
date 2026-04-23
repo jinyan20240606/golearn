@@ -17,6 +17,7 @@ func main() {
 	msg = make(chan string, 1) // 创建一个容量为1的channel,如果容量为0，则channel是阻塞的，则会永远放不进去，会触发死锁
 	// channel 有缓冲和无缓冲的channel是不一样的，容量大于0就是有缓冲，为0的就是无缓冲的
 
+	// 符号-左侧读，右侧写, 记住放值和取值的符号方向
 	msg <- "hello" // 放值到channel中, 通道符号发送和接受都是一样的 <-
 
 	data := <-msg // 从channel中取值

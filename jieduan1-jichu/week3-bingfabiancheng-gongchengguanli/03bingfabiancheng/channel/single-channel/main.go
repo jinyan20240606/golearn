@@ -27,7 +27,7 @@ func consumer(in <-chan int) {
 
 func main() {
 	// 定义前提：单向 channel 必须依赖双向 channel 转换而来，不能直接创建！
-	// 定义单向channel的写法：符号-左侧只读，右侧只写，不带符号就是双向
+	// 定义单向channel的写法：符号-左侧读，右侧写，不带符号就是双向
 
 	// 写法1:
 

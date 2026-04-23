@@ -259,6 +259,10 @@ wait group主要用于goroutine的执行等待，Add方法必须与Done方法配
    1. 前提：必须先建一个双向channel，然后根据双向channel创建单向channel，不能直接创建单向channel
    2. 定义单向channel的写法：符号在双向channel的位置-左侧只读，右侧只写，不带符号就是双向
 
+## 3-10 通过channel实现交叉打印
+
+- 练习题：使用2个goroutine实现交叉打印序列，一个goroutine打印数字，另外一个goroutine打印字母，效果如下：12AB34CD56EF78GH...
+- 见lianxi-0310文件夹
 
 ## 经验记录
 
