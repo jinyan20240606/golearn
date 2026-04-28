@@ -1,6 +1,6 @@
 package main
 
-import "net/rpc"
+import "net/rpc" // 默认go的rpc包，使用gob 进行序列化
 
 func main() {
 	// 1、建立一个连接,用Dial发起连接
