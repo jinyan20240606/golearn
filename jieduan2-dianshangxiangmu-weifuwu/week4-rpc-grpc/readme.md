@@ -145,3 +145,17 @@ print(rsp["result"])
 
 
 ### 3-3 替换rpc的传输协议为http
+
+- server端：我们不使用net去监听了，因为它可以监听tcp，我们使用http专用的包
+- client端：我们使用http的包，去请求server,如跨语言的python写法
+  
+```python
+import requests
+request = {
+    "id": 1,      
+    "method": "HelloService.Hello",
+    "params": ["bobby"],
+}
+rsp = requests.post("http://localhost:1234/jsonrpc", json=request)
+print(rsp.text)
+```
