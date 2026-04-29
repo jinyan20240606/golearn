@@ -284,3 +284,23 @@ service HelloService {
 5. 底层自动：序列化 + 网络传输
 
 全程不用管 TCP、JSON、编码！
+
+### 4-2 grpc开发环境的搭建
+
+
+1. 首先要下载配套工具
+   1. protoc：Protobuf 编译器（翻译官 + 代码生成器）
+      1. 下载完后，要实现环境变量访问就可以
+      2. 作用：把你写的 .proto 文件，翻译成各种语言（Go、Python、Java、JS）能直接用的代码
+   2. protoc-gen-go：专门负责翻译成 Go 代码的插件
+      1. 因为 protoc 本身只会识别 .proto 文件，它不知道 Go 语言长什么样！所以必须安装：
+      2. 如：翻译成 Go → protoc-gen-go，翻译成 Python → protoc-gen-python，翻译成 Java → protoc-gen-java
+2. 运行命令： `protoc --go_out=. hello.proto` 背后流程：
+   1. protoc 读取 hello.proto
+   2. 调用 protoc-gen-go 插件
+   3. 生成 hello.pb.go 文件（结构体 + 序列化代码）
+
+
+### 4-3 goland编辑器下配置protobuf插件
+
+。。。。。
