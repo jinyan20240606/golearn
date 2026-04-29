@@ -141,6 +141,21 @@ client.sendall(json.dumps(request).encode())# 把字典 → JSON 字符串，等
 rsp = client.recv(1024)# 接收最多 1024 字节
 rsp = json.loads(rsp.decode())# json.loads:JSON 字符串 → 字典，等于 Go 的 json.Unmarshal()，decode()：字节 → 字符串
 print(rsp["result"])
+
+
+# 还有一种写法使用zero rpc
+import zerorpc
+def hello():
+    yield "Hello World!"
+    yield "Hello World2!"
+for data in hello():
+        print(data)
+
+c = zerorpc.Client()
+c.connect("tcp://127.0.0.1:4242")
+# python中的生成器和迭代器
+c.bobby()  # go中如何实现这个直接调用服务器上的方法名？而不是使用client.Call("HelloService.Hello"
+print(c.hello())
 ```
 
 
@@ -158,4 +173,14 @@ request = {
 }
 rsp = requests.post("http://localhost:1234/jsonrpc", json=request)
 print(rsp.text)
+
 ```
+
+### 3-4&5 进一步改造rpc调用的代码
+
+- 这节课讲的这些概念，都是有用的，在后面的grpc学习中，都会有对应的概念场景
+- 发自灵魂的拷问：server_proxy 和client_proxy 能否自动生成？而且为多种语言生成？
+  - 都能满足，这个就是后面 要讲引出的 protobuf  + grpc ==> 完美解决
+
+
+
