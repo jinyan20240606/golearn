@@ -184,3 +184,103 @@ print(rsp.text)
 
 
 
+## 4章 gprc快速入门
+
+### 4-1 什么是grpc和protobuf
+
+- grpc 是 google 的一个开源的 rpc 框架，面向移动和http2设计，目前提供C，java，go语言版本，go的包叫grpc-go
+  - 服务 A 直接调用服务 B 的函数
+  - 底层用 HTTP/2 + Protobuf，微服务必用技术
+  - g开头的，最早就代表google的意思
+- Protobuf: 也是google出品的一种轻量高效的结构化数据存储格式，比json，xml强很多
+  - 跨语言的数据 “打包格式”，就是json 的替代品，作用：把结构体 / 对象压缩成二进制字节，比 JSON 更小、更快、更强
+  - 生成代码（Java/Go/Python/JS 都能用）
+  - protobuf经历了protobuf2 和 protobuf3 两个版本，现在用的是 protobuf3，简称pb3
+
+#### 为什么要学 Protobuf？（JSON 的缺点）
+
+- JSON 缺点：
+  - 大：有引号、括号
+  - 慢：解析文本慢
+  - 没有强类型：容易错
+  - 不能自动生成代码
+- Protobuf 优点：
+  - 超级小（比 JSON 小 3-10 倍）
+  - 超级快（二进制解析）
+  - 强类型（不会传错字段）
+  - 自动生成代码（一行代码不用手写序列化）
+- protobuf缺点：
+  - Protobuf 是二进制序列化协议优点：小、快、强类型、适合 RPC/gRPC，缺点全部来自：二进制、强约束、谷歌生态绑定
+  - 完全不可读、无法人工调试
+    - .proto 文件是说明书是可读的，不是数据！真正在网络上跑的是压缩后的二进制，不是文本！**
+  - 必须提前定义 .proto 文件，有强约束
+  - 学习成本更高
+  - 不适合通用业务场景，通用性差
+    - 浏览器原生不支持 Protobuf（JSON 天生支持），只适合：内部服务通信、RPC、微服务、高性能场景
+  - 不支持自解释
+    - JSON 自带结构，拿到字符串就能直接解析。Protobuf 二进制裸数据：脱离 proto 文件，完全无法逆向解析
+
+
+- 什么时候 不要用 Protobuf？
+  - 小型项目、单体应用
+  - 对外暴露的 HTTP 接口（给前端 / 第三方调用）
+  - 需要人工修改、查看、临时调试的数据
+  - 配置文件、日志、简单临时通信
+- 什么时候 必须用 Protobuf？
+  - 微服务、内网服务之间调用（gRPC）
+  - 高并发、大数据量、低延迟需求
+  - 多语言复杂服务协作，需要强类型约束
+  - 游戏、物联网、消息队列高性能传输
+
+
+#### protobuf的语法
+
+- 创建一个 hello.proto 文件：
+
+```go
+syntax = "proto3";
+
+// 定义请求
+message HelloRequest {
+  string name = 1;
+}
+
+// 定义响应
+message HelloResponse {
+  string message = 1;
+}
+
+// 定义服务
+service HelloService {
+  rpc SayHello (HelloRequest) returns (HelloResponse);
+}
+```
+- 然后一条命令：自动生成 Go、Python、Java、JS 代码！
+- 不用你写：
+  - 不用写 JSON 序列化
+  - 不用写 encode/decode
+  - 不用写结构体
+  - 全部自动生成！
+
+
+
+#### gRPC 是什么？（RPC 进阶版）
+
+- RPC = 远程过程调用
+  - 像调用本地函数一样调用远程服务：  `// RPC 远程函数（跨机器、跨语言调用）client.SayHello("张三")`
+- gRPC = 谷歌官方最强 RPC 框架
+  - 特点：
+    - 基于 HTTP/2（多路复用、长连接、高性能）
+    - 基于 Protobuf（小、快、强类型）
+    - 跨语言（Go ↔ Python ↔ Java ↔ JS 互通）
+    - 云原生、微服务标配
+
+#### gRPC 工作流程（超简单）
+
+1. 写 .proto 文件（定义接口、参数）
+2. 自动生成代码
+3. 服务端：实现接口
+4. 客户端：直接调用函数
+5. 底层自动：序列化 + 网络传输
+
+全程不用管 TCP、JSON、编码！
