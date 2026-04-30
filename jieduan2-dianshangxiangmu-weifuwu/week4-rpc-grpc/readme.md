@@ -292,9 +292,16 @@ service HelloService {
    1. protoc：Protobuf 编译器（翻译官 + 代码生成器）
       1. 下载完后，要实现环境变量访问就可以
       2. 作用：把你写的 .proto 文件，翻译成各种语言（Go、Python、Java、JS）能直接用的代码
+      3. `/bin/bash -c "$(curl -fsSL https://cdn.jsdelivr.net/gh/Homebrew/install@HEAD/install.sh)"`
+      4. `brew install protobuf`
+      5. `protoc --version`
    2. protoc-gen-go：专门负责翻译成 Go 代码的插件
       1. 因为 protoc 本身只会识别 .proto 文件，它不知道 Go 语言长什么样！所以必须安装：
       2. 如：翻译成 Go → protoc-gen-go，翻译成 Python → protoc-gen-python，翻译成 Java → protoc-gen-java
+   3. `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest 和 go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest`
+      1. 把 GOPATH 加入环境变量：`echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc`
+      2. 运行 `source ~/.zshrc`
+      3. `protoc-gen-go --version 和 protoc-gen-go-grpc --version` 能在终端下打印出版本号就行了
 2. 运行命令： `protoc --go_out=. hello.proto` 背后流程：
    1. protoc 读取 hello.proto
    2. 调用 protoc-gen-go 插件
@@ -303,4 +310,72 @@ service HelloService {
 
 ### 4-3 goland编辑器下配置protobuf插件
 
-。。。。。
+- 编辑器安装proto语言检测插件：proto-support
+- 新建个pb文件，看下语法
+
+见 part4-grpc/proto/helloworld.proto
+
+### 4-4 protobuf和json的直观对比
+
+
+- 语法开发
+  - 见 part4-grpc/proto/helloworld.proto
+- 运行命令： `protoc --go_out=. --go-grpc_out=. helloworld.proto`
+   - 命令解释：当前目录读取编译 helloworld.proto 文件，生成 Go 语言 + gRPC 代码，输出到当前目录
+   - goods.proto，要编译的源 proto 文件
+   - --go_out，表示：生成 Go 语言代码，对应其他语言：--java_out、--python_out
+   - plugins=grpc：启用 gRPC 插件，意思是：不仅生成结构体，还要生成 gRPC 服务接口、client、server 代码，不加这个，只会生成普通 struct，没有 gRPC 方法
+   - . 表示：输出目录：当前目录
+- 这条命令最终会生成两个文件
+  - helloworld.pb.go
+    - Protobuf 消息结构体
+    - 序列化 / 反序列化代码
+  - helloworld_grpc.pb.go文件- gRPC 服务端、客户端、接口（核心！）
+- 生成之后，我们建立main文件，去使用pb产物文件
+  - 对比看：明显是proto的压缩比更高，但是不易读
+
+#### helloworld.pb.go 文件大致理解
+
+
+它只生成了结构体、序列化、get 方法，没有服务端、没有客户端、没有接口。
+
+1. 包声明 + 依赖（头部）
+2. 你定义的 message → 生成 Go 结构体（核心！）
+3. proto 必须的基础方法（固定）
+   1. 每个结构体都会自动生成这 4 个方法：
+      1. Reset() → 清空结构体`func (x *HelloWorldRequest) Reset()`
+      2. String() → 打印内容`func (x *HelloWorldRequest) String() string`
+      3. ProtoMessage() → 标记这是 proto 消息（必须）`func (*HelloWorldRequest) ProtoMessage() {}`
+      4. ProtoReflect() → 反射用（底层序列化）`func (x *HelloWorldRequest) ProtoReflect() protoreflect.Message`
+4. Get 方法（自动生成，安全访问）
+   1. func (x *HelloWorldRequest) GetName() string
+   2. func (x *HelloWorldRequest) GetAge() int32
+   3. func (x *HelloWorldRequest) GetCourses() []string
+   4. 即使结构体是 nil，调用 GetName() 也不会崩溃,安全访问
+5. 底层编码数据（二进制描述符）
+   1.  proto 文件的二进制版本,var file_helloworld_proto_rawDesc = "...二进制数据...",,,,完全不用管，底层自动用。
+6. 总结：protoc 生成的代码 = 自动帮你写好了以下内容
+    2.  Go 结构体（对应 message）
+    3.  字段（name/age/courses）
+    4.  Get 方法（安全访问）
+    5.  序列化 / 反序列化支持
+    6.  proto 底层需要的所有固定代码
+    7.  使用时你只需要做一件事：`req := &helloworld.HelloWorldRequest{Name: "小王",}`
+
+
+- 该文件没有任何grpc相关代码
+
+#### helloworld_grpc.pb.go文件
+
+- 生成 gRPC 服务端接口
+- 生成 gRPC 客户端调用代码
+- 生成 RegisterXXXServer 注册方法
+- 这才是 gRPC 核心文件！
+
+
+
+### 4-5 为什么我们需要安装protoc和protoc-gen-go？
+
+- 编写grpc相关的proto语法生成helloworld_grpc.pb.go文件
+- `service Hello { `在proto文件中写service语法，就会额外生成helloworld_grpc.pb.go文件
+  - protoc --go_out=. --go-grpc_out=. helloworld.p ----- 必须指定go-grpc_out才会生成grpc文件
