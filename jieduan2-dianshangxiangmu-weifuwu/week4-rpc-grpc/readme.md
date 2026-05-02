@@ -410,3 +410,8 @@ service HelloService {
 1. 创建proto文件，然后用命令生成go代码
    1. `protoc --go_out=. --go-grpc_out=. stream.proto`
    2. 生成了开箱即用的stream_grpc.pb.go和stream.pb.go 2个文件
+
+
+### 4-8 单向流双向流模式代码完善
+
+还是见 stream_grpc_test
