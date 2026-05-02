@@ -13,6 +13,12 @@
    1. 英文字母、数字、符号（ASCII 字符）：占 1 个字节；
    2. 中文、日文等东亚字符：占 3 个字节；
    3. 极少数特殊字符（如 emoji）：占 4 个字节；
+3. Go 里直接用 string(数字) 不是把数字转成字符串，而是把数字当成 Unicode 字符编码转成字符
+   1. 比如：string(65) → 不是 "65"，而是字符 A，
+   2. 所以绝对不能用 string(i) 来把数字转成数字字符串！
+   3. 正确写法（2 种，任选）
+      1. strconv.Itoa(i)
+      2. fmt.Sprintf（一行搞定）：result := fmt.Sprintf("%s %d %d", req.Data, i, time.Now().Unix())
 
 ## go语言中的常见规定
 
