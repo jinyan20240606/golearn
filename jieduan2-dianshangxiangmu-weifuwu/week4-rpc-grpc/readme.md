@@ -302,6 +302,7 @@ service HelloService {
       1. 把 GOPATH 加入环境变量：`echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc`
       2. 运行 `source ~/.zshrc`
       3. `protoc-gen-go --version 和 protoc-gen-go-grpc --version` 能在终端下打印出版本号就行了
+   4. 注意下protoc的版本和protoc-gen-go的protobuf版本要保持一致
 2. 运行命令： `protoc --go_out=. hello.proto` 背后流程：
    1. protoc 读取 hello.proto
    2. 调用 protoc-gen-go 插件
@@ -379,3 +380,7 @@ service HelloService {
 - 编写grpc相关的proto语法生成helloworld_grpc.pb.go文件
 - `service Hello { `在proto文件中写service语法，就会额外生成helloworld_grpc.pb.go文件
   - protoc --go_out=. --go-grpc_out=. helloworld.p ----- 必须指定go-grpc_out才会生成grpc文件
+
+### 4-6 go下grpc快速体验
+
+- 
