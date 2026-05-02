@@ -20,7 +20,7 @@ type server struct {
 
 // 服务端流模式的rpc
 func (s *server) GetStream(req *proto.StreamReqData, res proto.Greeter_GetStreamServer) error {
-	// 这个方法：只要调用一次，客户端就会收到流式消息，所以不能用普通的return消息了，return是一次性的，send可以持续发送
+	// 这个方法：只要调用send一次，客户端就会收到流式消息，所以不能用普通的return消息了，return是一次性的，send可以持续发送，要做到持续发送，就得加for循环
 	i := 0
 	for {
 		i++
