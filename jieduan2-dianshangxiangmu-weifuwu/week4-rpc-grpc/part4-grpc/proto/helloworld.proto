@@ -17,6 +17,7 @@ message HelloWorldRequest { // 会对应生成客户端的请求方法
   string name = 1; // 1是编号 ，不是值，是序列化时的标识 ID
   int32 age = 2; // int不支持，需要使用int32或64
   repeated string courses = 3;// 相当于Courses []string, 定义切片类型，列表、数组、多个值 都用 repeated
+  // 代表 courses是一个[]string 类型
 }
 
 // 服务端 返回给客户端 的结构体

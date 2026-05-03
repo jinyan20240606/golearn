@@ -22,6 +22,7 @@ grpc底层就是基于protobuf的
 5. 使用其他消息类型
 6. ...等等，详细查看搜索文档
 
+
 ## 1-2 option go_package的作用
 
 - option go_package = "./;helloworld"; // 👈 就加这一行！
@@ -59,3 +60,19 @@ message HelloRequest {
 - protobuf中 还提供了许多内置消息类型，如：`google.protobuf.Empty`，使用见文件
 - 内置消息类型见包源码目录里：github.com/golang/protobuf/ptypes下面是所有支持的内置类型
 - 内置类型然后在client中使用时，引入路径也是github.com下的源码目录，见 `grpc_proto_test/client/client.go`
+
+
+## 1-5 嵌套的message对象
+
+
+见helloworld中的嵌套的Result类型相关使用 和client中的引用方式
+
+## 1-6 protobuf中的enum枚举类型
+
+## 1-7 map类型
+
+## 1-8 使用protobuf内置的timestamp类型
+
+时间戳类型
+
+## 1-9 grpc的metadata机制

@@ -262,6 +262,45 @@ service HelloService {
   - 不用写结构体
   - 全部自动生成！
 
+##### 语法
+
+- protobuf 是 Google 语言 neutral 的序列化格式，gRPC 是基于 protobuf 的，gRPC 是一个高性能、开源和通用的 RPC 框架，基于 HTTP/2 设计的，支持跨语言和跨平台。-----它是一套 “跨语言的数据格式定义语言”，用来定义：你要发什么数据、数据长什么样
+- 作用：
+  - 定义数据结构（像 JSON 结构，但更强）
+  - 自动生成 Go/Java/Python 代码
+  - gRPC 必须用它
+- Protobuf 里的 4 大核心概念
+  - 1. message —— 定义 “数据结构体”
+    - 定义你要传输的一条数据结构，相当于go的struct
+      - `message 结构体名 {  类型 字段名 = 编号; }`
+      - 对应生成的go代码：`type 结构体名 struct {  字段名 类型; }`
+      - 你所有 gRPC 收发数据，都必须用 message。
+  - 2. service —— 定义 “服务”
+    - service —— 定义 “服务接口”，定义你这个 gRPC 提供哪些接口，相当于 Go 的 interface
+    - `service 服务名 {  rpc 方法名(请求) returns (响应);}`
+  - 3. rpc —— 定义 “远程过程调用”
+    - rpc —— 定义 “一个接口方法”,rpc = 远程方法调用,可以用来定义4种模式的方法：简单模式，客户端流模式，双向流模式，服务端流模式
+  - 4. enum —— 定义 “枚举类型”
+    - enum —— 定义 “固定选项”
+    - 规则：必须有 0 值（第一个），不能乱传数字，代码更安全
+- protobuf中字段规则
+  - 1. = 1 = 2 是什么？不是值！不是序号！是字段唯一编号，序列化用的。从 1 开始顺序写就行。
+  - 2. 字段的类型
+    - string    字符串
+    - int32     数字
+    - bool      布尔
+    - float     浮点
+    - bytes     字节
+    - 自定义的message类型也可以直接用做字段的类型
+    - map类型
+  - 3. 字段修饰符
+    - 单个值默认不用写，直接跟字段类型  --- `string name = 1;`
+    - repeated —— 数组 / 列表 `repeated User users = 1; // 切片、数组`
+    - optional —— 可选字段 `optional string name = 1;`
+- gRPC 通信流程
+  - 客户端 → 发 message → gRPC → 服务端
+  - 服务端 → 发 message → gRPC → 客户端
+  - 所有数据必须是：message 或 repeated message
 
 
 #### gRPC 是什么？（RPC 进阶版）

@@ -1,6 +1,7 @@
 syntax = "proto3";
 import "base.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
 option go_package = "./;proto";
 
 
@@ -12,10 +13,40 @@ service Greeter {
 }
 
 
+// message Result { // 除了提出公用的作为消息体类型的，其他地方都用这个结构体
+//   string name = 1;
+//   int32 age = 2;
+// }
+
 message HelloRequest {
   string name = 1; // 1是编号 ，不是值
   int32 age = 2;
+
+  message Result { // 除了提出公用的作为消息体类型的，也可以嵌套这个结构体类型去直接使用
+    string name = 1;
+    int32 age = 2;
+  }
+  repeated Result data = 3; // 列表、数组、多个值 都用 repeated
+  // 代表：data 是一个 Result 数组，可以放多条数据Go 里生成的类型是：**[]Result*
+
+  // 使用枚举类型
+  Gender g = 4;
+
+  // 使用map类型
+  map <string, string> mp = 5;
+
+  // 使用内置的时间戳类型
+  google.protobuf.Timestamp addTime = 6;
+
+
 }
+
+enum Gender {
+  MALE = 0;
+  FEMALE = 1;
+}
+
+
 
 message HelloReply {
   string message = 1;
