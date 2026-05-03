@@ -76,3 +76,117 @@ message HelloRequest {
 时间戳类型
 
 ## 1-9 grpc的metadata机制
+
+gRPC让我们可以像本地调用一样实现远程调用，对于每一次的RPC调用中，都可能会有一些有用的数据，而这些数据就可以通过metadata来传递，metadata是以key-value的形式存储数据的，其中key是string类型，而value是[]string，即一个字符串数组类型。metadata使得client和server能够为对方提供关于本次调用的一些信息，就像一次http请求的RequestHeader和ResponseHeader一样。http中header的生命周周期是一次http请求，那么metadata的生命周期就是一次RPC调用。
+
+- 类型`type MD map[string][]string` // value为string切片类型
+- **metadata的核心规则**
+  - Metadata = gRPC 的请求头
+  - 必须放在 context 里传递
+
+### 新建metadata
+
+- 新建的时候可以像创建普通的map类型一样，使用new关键字进行创建，也可以使用Pairs方法
+  - metadata.New()
+  - metadata.Pairs()
+```go
+// 使用New的方式：创建空 metadata
+md := metadata.New(nil)
+
+// 往里面放值:用 Set 会覆盖，不能追加
+md.Set("token", "123456")
+md.Set("uid", "10086")
+// 往同一个 key 追加多个值：-----> "hobby": ["eat", "sleep"]
+md.Append("hobby", "eat")
+md.Append("hobby", "sleep")
+
+// 或者直接赋值
+md := metadata.MD{
+    "token": []string{"123456", "654321"},
+    "uid":   []string{"10086"},
+}
+
+// 或者使用Paris的方式
+md := metadata.Pairs(
+    "token", "123456", // 给同一个 key 放多个值的方式实现数组写法
+    "token", "789", // token: [tk1, tk2, tk3]
+    "uid", "10086",
+    "version", "1.0.0",
+)
+
+// 获取全部值 → 返回 []string
+hobbies := md["hobby"]
+
+// 或者用 Get → 返回第一个值
+first := md.Get("hobby") // "eat"
+```
+
+
+### 发送metadata
+
+```go
+// 1. 构造 metadata（单值 + 多值都可以）
+md := metadata.Pairs(
+    "token", "123456",
+    "uid", "10086",
+    "hobby", "eat",    // 多值
+    "hobby", "sleep",  // 多值
+)
+
+// 2. 把 md 放入 context（关键方法）
+ctx := metadata.NewOutgoingContext(context.Background(), md)
+
+// 3. 调用 gRPC 方法时，把 ctx 传进去
+resp, err := client.SayHello(
+    ctx, // 👈 必须传这个 ctx
+    &proto.HelloRequest{Name: "test"},
+)
+```
+
+### 接收metadata
+```go
+
+func (s *server) SayHello(
+    ctx context.Context,
+    req *proto.HelloRequest,
+) (*proto.HelloReply, error) {
+
+    // 👇 从 ctx 里取出 metadata
+    md, ok := metadata.FromIncomingContext(ctx)
+    if !ok {
+        return nil, errors.New("获取元数据失败")
+    }
+
+    // =====================================
+    // 取值方式1：Get → 拿第一个值（常用）
+    // =====================================
+    token := md.Get("token") // string
+    uid := md.Get("uid")     // string
+
+    // =====================================
+    // 取值方式2：直接取数组 → 拿全部值（多值）
+    // =====================================
+    hobbies := md["hobby"] // []string{"eat", "sleep"}
+
+    fmt.Println("token:", token)
+    fmt.Println("uid:", uid)
+    fmt.Println("hobbies:", hobbies)
+
+    return &proto.HelloReply{Message: "ok"}, nil
+}
+```
+
+## 1-10 grpc拦截器-go版
+
+- 拦截器，可以理解为grpc中间件，在grpc调用之前和之后执行。
+  - 客户端可以加拦截器
+  - 服务端也加个拦截器
+- 简单模式和流模式的拦截器写法也不一样
+
+
+见part1-protobuf/grpc_interpreter文件夹
+
+
+
+- 有一个现成的开源中间件，可以参考：https://github.com/grpc-ecosystem/go-grpc-middleware
+- 也可以自己写一个中间件库

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+// 新版 protoc 必须在 .proto 文件里声明 go_package
+
+option go_package = "./;proto"; // 👈 就加这一行！
+
+service Greeter {
+  // 这里接收的参数只能使用下面定义的消息结构体类型参数
+  rpc SayHello(HelloRequest) returns (HelloReply);
+}
+
+// 定义一个 “消息结构体”，相当于 Go 里的 struct。名字一般叫：XXXRequest = 请求体
+// 用来客户端发给服务端的数据
+message HelloRequest { // 会对应生成客户端的请求方法
+  string name = 1; // 1是编号 ，不是值，是序列化时的标识 ID
+}
+
+// 服务端 返回给客户端 的结构体
+message HelloReply { // 会对应生成服务端的接口方法
+  string message = 1;
+}
