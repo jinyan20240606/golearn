@@ -190,3 +190,9 @@ func (s *server) SayHello(
 
 - 有一个现成的开源中间件，可以参考：https://github.com/grpc-ecosystem/go-grpc-middleware
 - 也可以自己写一个中间件库
+
+## 1-11 通过拦截器和metadata实现grpc的auth认证
+
+- 实现方式：直接在客户端的拦截器中添加认证信息的metadata元数据，在服务端的拦截器中验证元数据
+- 另一种实现方式：go语言中可以不用在client中使用原生拦截器那样做，可以换一种方式做，go语言中针对认证场景有一个专门的intercepter
+  - 可以把代码写的更加简单呢
