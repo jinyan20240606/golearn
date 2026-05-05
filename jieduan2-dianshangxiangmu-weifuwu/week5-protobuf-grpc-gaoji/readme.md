@@ -196,3 +196,12 @@ func (s *server) SayHello(
 - 实现方式：直接在客户端的拦截器中添加认证信息的metadata元数据，在服务端的拦截器中验证元数据
 - 另一种实现方式：go语言中可以不用在client中使用原生拦截器那样做，可以换一种方式做，go语言中针对认证场景有一个专门的intercepter
   - 可以把代码写的更加简单呢
+## 1-12 grpc的验证器
+
+- 使用protoc-gen-validate 即protobuf的插件，后续自行去guthub上搜索使用
+- 需要去github上下载 protoc-gen-validate 插件的proto源码
+- 步骤：
+  - 1. 编写带validate语法的protobuf文件
+  - 2. 在服务端中使用对应生产的验证方法验证，具体查文档
+- 编译生成protobuf时，需要添加参数：... --validate_out=lang=go:. helloworld.proto
+
