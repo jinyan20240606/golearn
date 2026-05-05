@@ -196,12 +196,36 @@ func (s *server) SayHello(
 - 实现方式：直接在客户端的拦截器中添加认证信息的metadata元数据，在服务端的拦截器中验证元数据
 - 另一种实现方式：go语言中可以不用在client中使用原生拦截器那样做，可以换一种方式做，go语言中针对认证场景有一个专门的intercepter
   - 可以把代码写的更加简单呢
-## 1-12 grpc的验证器
+## 1-12&13 grpc的验证器
 
 - 使用protoc-gen-validate 即protobuf的插件，后续自行去guthub上搜索使用
+  - 安装`github.com/envoyproxy/protoc-gen-validate v1.3.3`
 - 需要去github上下载 protoc-gen-validate 插件的proto源码
 - 步骤：
   - 1. 编写带validate语法的protobuf文件
   - 2. 在服务端中使用对应生产的验证方法验证，具体查文档
+    -  定义拦截器：在方法处理前进行参数验证, 使用Validate方法，（注意：req.(Validator)定义接口不定义结构体类型，能适用于所有类型的grpc方法验证），，验证通过执行后，再执行放行方法handler
+    -  验证失败后，返回grpc中统一封装的错误对象类型含错误和grpc提供的状态码
 - 编译生成protobuf时，需要添加参数：... --validate_out=lang=go:. helloworld.proto
 
+
+
+## 1-14&15 grpc的状态码
+
+与http中的状态码400，500等类似，grpc中也有对应的
+
+在go语言中如何返回错误码,和在客户端中解析
+
+- 见 grpc_error_test 文件夹
+  - 主要使用	"google.golang.org/grpc/codes" 和 "google.golang.org/grpc/status" 包
+
+
+## 1-16 grpc的超时机制
+
+grpc中如何在客户端中设置超时？
+
+见 part1-protobuf/grpc_error_test/client/client.go中的context.WithTimeout方法
+
+## 1-17 protoc生成的go源码里有什么
+
+讲一下源码的大致逻辑

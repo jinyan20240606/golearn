@@ -1,15 +1,20 @@
 syntax = "proto3";
-import "validate.proto"
-// 新版 protoc 必须在 .proto 文件里声明 go_package
 
-option go_package = "./;proto"; // 👈 就加这一行！
+import "validate/validate.proto";
 
+option go_package = "./;proto";
 
 service Greeter {
   rpc SayHello (HelloRequest) returns (HelloReply) {}
 }
 
 message HelloRequest {
-// 验证器就是：可以在定义类型时，直接添加验证规则，然后protoc-gen-go-validate插件会自动生成验证代码，并且在服务端调用时，会自动验证数据，不合法直接被拦截
-  string name = 1 [(validate.rules).string = {min_len: 1}];
+  // 验证器：在定义类型时直接添加验证规则
+  // protoc-gen-validate 插件会���动生成 Validate() 方法
+  string name = 1 [(validate.rules).string = {min_len: 2, max_len: 10}];
+  int32 age = 2 [(validate.rules).int32 = {gt: 0, lte: 150}];
+}
+
+message HelloReply {
+  string message = 1;
 }
