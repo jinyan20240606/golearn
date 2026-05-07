@@ -435,3 +435,20 @@ type Company struct {
   - 不是不使用外键，而是不用外键约束
 
 ### 4-16 gorm处理多对多的关系
+
+> 文档：https://gorm.io/zh_CN/docs/many_to_many.html
+> 笔记见 ch12/main.go
+
+多对多关系：如一个用户可以学习多个语言，一个语言也可以被多个用户学习
+
+- **重点记录**：gorm多对多关系，需要使用中间链接表，user表和language表之间，需要使用中间链接表做多对多映射，不需要前面的外键字段来标识
+- GORM 的 AutoMigrate 为 User 创建表时，GORM 会自动创建中间连接表，连接表会同时拥有两个模型的外键
+- 查询关联方法：单独取出model的关联数据：https://gorm.io/zh_CN/docs/associations.html#%E6%9F%A5%E8%AF%A2%E5%85%B3%E8%81%94
+
+### 4-17 gorm的表名自定义，自定义beforecreate逻辑
+
+> 笔记见 ch13/main.go
+
+我们的表名是根据type结构体的名称后面加复数的形式来完成的。
+
+一些增删改查都有提供对应的钩子，见https://gorm.io/zh_CN/docs/create.html#%E5%88%9B%E5%BB%BA%E9%92%A9%E5%AD%90
