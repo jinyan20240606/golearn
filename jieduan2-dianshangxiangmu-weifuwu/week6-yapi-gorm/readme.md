@@ -390,4 +390,48 @@ SELECT * FROM users WHERE age > (SELECT avg(age) FROM users)
   - 如果你的模型包含了 gorm.DeletedAt字段（该字段也被包含在gorm.Model中），那么该模型将会自动获得软删除的能力！
   - 当调用Delete时，GORM并不会从数据库中删除该记录，而是将该记录的DeleteAt设置为当前时间，而后的一般查询方法将无法查找到此条记录。
 
-### 4-13 表的关联插入
+### 4-13 表的关联关系和BelongsTo的关联插入
+
+> 文档： https://gorm.io/zh_CN/docs/belongs_to.html
+> 笔记见 ch09/main.go
+
+- 提供了4种关联插入方式：
+  - Belong To 建立多对1关联
+  - Has One 建立1对1关联
+  - Has Many 建立1对多关联
+  - Many To Many 建立多对多关联
+
+```go
+// `User` 属于 `Company`，`CompanyID` 是外键
+type User struct {
+  gorm.Model
+  Name      string
+  CompanyID int // 真正数据库保存的外键
+  Company   Company // Company 只是用来预加载 / 查询，不会生成数据库字段
+}
+
+type Company struct {
+  ID   int
+  Name string
+}
+```
+
+### 4-14 通过preload和joins关联查询多表
+
+> 笔记见 ch10/main.go
+
+- 重写外键和重写引用：https://gorm.io/zh_CN/docs/belongs_to.html#%E9%87%8D%E5%86%99%E5%A4%96%E9%94%AE
+  - 重写外键：是重写user表的外键名字，但实际对应的字段还是关联表的默认id
+  - 重写引用：能实际更改对应的关联表的哪个字段作为外键
+
+### 4-15 hasmany关系
+
+> 笔记见 ch11/main.go
+
+一对多关系，如一个用户有多张信用卡，每个信用卡只属于1个用户
+
+
+- **重点记录**：一般不建议不用外键约束，只留逻辑外键，数据的一致性由应用层（代码）保证，不由数据库保证
+  - 不是不使用外键，而是不用外键约束
+
+### 4-16 gorm处理多对多的关系

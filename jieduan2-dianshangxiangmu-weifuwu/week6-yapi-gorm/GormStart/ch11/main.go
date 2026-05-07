@@ -11,9 +11,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// `User` 属于 `Company`，`CompanyID` 是外键
+// 一对多关系：`User` 有多个 `CreditCard`，`UserRefer` 是外键
 type User struct {
 	gorm.Model
+
+	// 一对多关系的写法，外键是 CreditCard 里的 UserRefer 字段但数据库不创建任何外键约束纯逻辑关联，高性能，大型系统推荐
 	CreditCards []CreditCard `gorm:"foreignKey:UserRefer"`
 }
 
@@ -44,13 +46,15 @@ func main() {
 		panic(err)
 	}
 
+	// 创建表
 	db.AutoMigrate(&CreditCard{})
 
-	//在大型的系统中，我个人不建议使用外键约束，外键约束也有很大的优点： 数据的完整性
+	//在大型的系统中，我个人不建议使用外键约束，因为外键约束对性能的影响很大，外键约束也有很大的优点： 数据的完整性
 	/*
-	外键约束会让给你的数据很完整，即使是业务代码有些人考虑的不严谨
-	在大型的系统，高并发的系统中一般不使用外键约束，自己在业务层面保证数据的一致性
-	 */
+		外键约束会让给你的数据很完整，即使是业务代码有些人考虑的不严谨
+		在大型的系统，高并发的系统中一般不使用外键约束，自己在业务层面保证数据的一致性
+	*/
+	// 创建用户和信用卡数据插入
 	//user := User{}
 	//db.Create(&user)
 	//db.Create(&CreditCard{
@@ -62,8 +66,9 @@ func main() {
 	//	UserRefer: user.ID,
 	//})
 	var user User
+	// 还是通过预加载进行关联查询
 	db.Preload("CreditCards").First(&user)
-	for _, card := range user.CreditCards{
+	for _, card := range user.CreditCards {
 		fmt.Println(card.Number)
 	}
 

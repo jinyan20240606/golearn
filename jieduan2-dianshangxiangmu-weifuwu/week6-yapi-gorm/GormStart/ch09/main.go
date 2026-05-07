@@ -14,15 +14,14 @@ import (
 type User struct {
 	gorm.Model
 	Name      string
-	CompanyID int //数据库中存储的字段company_id
-	Company   Company
+	CompanyID int     //数据库中存储的字段company_id
+	Company   Company // 预加载关系字段，没在数据库里存储
 }
 
 type Company struct {
 	ID   int
 	Name string
 }
-
 
 func main() {
 	// 参考 https://github.com/go-sql-driver/mysql#dsn-data-source-name 获取详情
@@ -45,7 +44,11 @@ func main() {
 		panic(err)
 	}
 
-	//db.AutoMigrate(&User{}) //新建了user表和company表，并设置了外键
+	db.AutoMigrate(&User{}) //只写user表就行，会自动创建关联的表，新建了user表和company表，并设置了外键
+
+	db.Create(&User{ // 此时插数据，会报错：因为缺少关联的company表数据
+		Name: "bobby2",
+	})
 
 	//db.Create(&User{
 	//	Name:      "bobby",
@@ -54,13 +57,11 @@ func main() {
 	//	},
 	//})
 
-	db.Create(&User{
-		Name:      "bobby2",
-		Company: Company{
-			ID:1,
+	db.Create(&User{ // 关联创建：会自动往相关联的表插入数据
+		Name: "bobby2", // 此时CompanyID 可以不写，会自动根据Company插入数据
+		Company: Company{ // 此时必须写已有的id值，若再写Name，则会往Company表里重复插入数据，传id的话，会关联已有的行记录数据
+			ID: 1,
 		},
 	})
-
-
 
 }
