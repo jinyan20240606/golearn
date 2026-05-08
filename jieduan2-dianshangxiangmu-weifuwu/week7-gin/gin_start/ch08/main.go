@@ -37,8 +37,14 @@ func Hook404() gin.HandlerFunc {
 
 func main() {
 	router := gin.Default()
-	//使用logger和recovery中间件 全局所有
+	// 全局使用gin内置的中间件
+	// 使用logger：自动打印接口请求日志
+	// recovery中间件：如果接口代码崩溃（panic），服务器不会直接挂掉，捕获崩溃，返回 500 错误给前端，程序继续运行
+	router.Use(gin.Logger(), gin.Recovery())
 	router.Use(Hook404())
+
+	authrized := router.Group("/auth") // 使用自定义中间件，仅在该分组下生效
+	authrized.Use(MyLogger())
 
 	router.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

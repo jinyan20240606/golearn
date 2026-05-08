@@ -22,6 +22,20 @@
 4. - **重点记录**：一般不建议不用外键约束，只留逻辑外键，数据的一致性由应用层（代码）保证，不由数据库保证
   - 不是不使用外键，而是不用外键约束
 
+### 常用遗忘方法
+1. strings.SplitN(字符串, 分隔符, 切成几段)
+2. Go JSON库的标签常见语法
+   1. 
+   ```go
+   type LoginForm struct {
+	User     string `json:"user,omitempty" binding:"required,min=3,max=10"`
+	Password string `json:"password,-" binding:"required"`
+   }
+   // 最常用的 2 个：
+   // omitempty：字段为空时，不返回给前端
+   // -：忽略这个字段，不序列化、不返回
+   ```
+
 ## go语言中的常见规定
 
 ### Go 语言中命名和结构体初始化规定
