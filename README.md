@@ -20,7 +20,9 @@
       1. strconv.Itoa(i)
       2. fmt.Sprintf（一行搞定）：result := fmt.Sprintf("%s %d %d", req.Data, i, time.Now().Unix())
 4. - **重点记录**：一般不建议不用外键约束，只留逻辑外键，数据的一致性由应用层（代码）保证，不由数据库保证
-  - 不是不使用外键，而是不用外键约束
+   1.  不是不使用外键，而是不用外键约束
+5. 数据库中的字符集：utf8mb4 = 完整版 UTF-8（能存 emoji 😄），默认实现的utf8mb4是不支持emoji的
+   1. 全世界所有标准 UTF-8 都能存 Emoji，只有 MySQL 的 utf8 是假的、阉割版，存不了
 
 ### 常用遗忘方法
 1. strings.SplitN(字符串, 分隔符, 切成几段)

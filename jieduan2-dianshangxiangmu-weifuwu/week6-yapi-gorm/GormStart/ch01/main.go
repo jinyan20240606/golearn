@@ -20,6 +20,7 @@ type Product struct {
 
 func main() {
 	// 参考 https://github.com/go-sql-driver/mysql#dsn-data-source-name 获取详情
+	// root:root，用户名：密码，用 TCP 协议连接，数据库地址 + 端口，要连接的数据库名字，字符集：支持所有中文 + 表情符号，parseTime=True(让 Go 能正确解析 MySQL 的时间类型,不开会报错，无法用 time.Time),使用本地时区
 	dsn := "root:root@tcp(192.168.0.104:3306)/gorm_test?charset=utf8mb4&parseTime=True&loc=Local"
 
 	newLogger := logger.New(

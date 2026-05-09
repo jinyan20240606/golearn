@@ -19,6 +19,7 @@ type Language struct {
 	AddTime sql.NullTime //每个记录创建的时候通过钩子自动加上当前时间加入到AddTime中
 	// AddTime1 time.Time 这种默认的时间类型有个坑，当没有给字段添加值时，它默认会设置为零值自动变成 零值：0001-01-01 00:00:00，零值又不符合合法的时间格式，就导致数据库操作失败
 	// 所以采用sql.NullTime类型，零值可以为null，数据库操作就不会失败了，实质是设置列字段的类型为时间和允许为null：add_time datetime NULL
+	// 还有一种写法：*time.Time 这种指针类型的时间，零值是 nil，数据库操作也不会失败，实质也是设置列字段的类型为时间和允许为null：add_time datetime NULL
 }
 
 // 02--- BeforeCreate创建之前的钩子
