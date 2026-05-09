@@ -231,3 +231,9 @@ func main() {
 - 继续见gin_start/ch09
 
 ## 1-16&17 gin优雅的退出
+
+- 见gin_start/ch10
+
+监听系统退出信号，让程序可以优雅关闭，而不是暴力中断，
+
+注意下windows和linux的退出信号写法可能也不一样
