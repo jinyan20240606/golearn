@@ -31,6 +31,7 @@ func main() {
 	quit := make(chan os.Signal)
 	// syscall.SIGINT 对应：Ctrl + C，syscall.SIGTERM 对应：系统停止 / 关闭指令，kill PID，服务器重启、容器停止，系统正常关闭程序时发出
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	// 阻塞，等待接收退出信号
 	<-quit
 	// 处理后续收尾逻辑
 	fmt.Println("关闭server中")
