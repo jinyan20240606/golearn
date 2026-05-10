@@ -62,6 +62,25 @@
 
 ### 1-4 md5盐值加密解决用户密码安全问题
 
+
+- 使用开源库已经封装了密码加密加盐的方法："github.com/anaskhan96/go-password-encoder"
+  - 库内部源码，就是这么写的：PBKDF2 本身不是哈希算法，它是一个 “加密框架 / 流程”！它自己不会算哈希，必须靠 HashFunc（SHA512/SHA1）来干活！PBKDF2 只是一个 “重复加密的流程框架”，它需要一个真正的哈希算法来执行每一次加密
+    ```go
+    derivedKey := pbkdf2.Key([]byte(password), 
+        salt, 
+        opts.Iterations,  // 迭代次数
+        opts.KeyLen,      // 密钥长度
+        opts.HashFunc,    // SHA512
+    )
+    ```
+  - 该函数内部自动计算生成一个加密后 的随机盐值和 加密后的密文
+    - `salt, encodedPwd := password.Encode("generic password", options)`
+  - 验证用法：验证用户的密码对不对  
+    - `password.Verify("原始密码", passwordInfo[2]/*盐值*/, passwordInfo[3]/*密文密码*/, options)`
+- 问题：有盐值，那这个盐值存在哪里呢，用户登录后用户名密码得到后，咋取到盐值进行校验呢
+  - 一般不建议salt存在用户表中，一般是直接存在密文密码中,存储到数据库的密码字符串，格式是：`$pbkdf2-sha512$随机盐值$加密后的密文`
+  - 当用户名登录后，用它的原始密码和数据库中的密文密码包含的盐值和密文提取出来进行方法验证对比，如果相同，则验证成功
+
 ## 9周 用户服务的web服务
 
 

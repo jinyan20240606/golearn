@@ -80,20 +80,29 @@ func main() {
 
 	// md5加密 方法演示
 	fmt.Println(genMd5("xxxxx_123456"))
-	//将用户的密码变一下 随机字符串+用户密码
-	//暴力破解 123456 111111 000000 彩虹表 盐值
+	// 加盐的本质：将用户的密码变一下 随机字符串+用户密码
+
+	// 暴力破解 123456 111111 000000 彩虹表 盐值
 	//e10adc3949ba59abbe56e057f20f883e
 	//e10adc3949ba59abbe56e057f20f883e
 
 	// Using custom options
-	//options := &password.Options{16, 100, 32, sha512.New}
-	//salt, encodedPwd := password.Encode("generic password", options)
+	// go-password-encoder 开源库的基本用法：
+	// 16：salt 长度（随机盐）
+	// 100：迭代次数（越慢越安全）迭代次数 = 重复计算哈希的次数，次数越多 → 越慢 → 越难破解！
+	// 32：生成的密钥长度
+	// sha512.New：哈希算法（SHA512，超级安全）
+	//options := &password.Options{16, 100, 32, sha512.New} // 不传默认使用 SHA1算法不安全
+	// 该函数内部自动计算生成一个加密后 的随机盐值和 加密后的密文
+	//salt, encodedPwd := password.Encode("用户的明文密码", options)
+	// 这个newPassword就是我们要存储到数据库的密码字符串，格式是：`$pbkdf2-sha512$随机盐值$加密后的密文`
 	//newPassword := fmt.Sprintf("$pbkdf2-sha512$%s$%s", salt, encodedPwd)
 	//fmt.Println(len(newPassword))
 	//fmt.Println(newPassword)
 	//
 	//passwordInfo := strings.Split(newPassword, "$")
 	//fmt.Println(passwordInfo)
-	//check := password.Verify("generic password", passwordInfo[2], passwordInfo[3], options)
+	// 验证用法：验证用户的密码对不对
+	//check := password.Verify("用户的明文密码", passwordInfo[2], passwordInfo[3], options)
 	//fmt.Println(check) // true
 }
