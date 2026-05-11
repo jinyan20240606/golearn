@@ -2,6 +2,7 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";
 option go_package = ".;proto";
 
+// rpc的服务端响应的接口方法
 service User{
     rpc GetUserList(PageInfo) returns (UserListResponse); // 用户列表
     rpc GetUserByMobile(MobileRequest) returns (UserInfoResponse); //通过mobile查询用户
@@ -21,8 +22,8 @@ message CheckResponse{
     bool success = 1;
 }
 
-message PageInfo {
-    uint32 pn = 1;
+message PageInfo {// proto会自动转成大写的
+    uint32 pn = 1; // 用无符号，因为页码不可能是负数
     uint32 pSize = 2;
 }
 
@@ -52,6 +53,10 @@ message UserInfoResponse {
     string passWord = 2;
     string mobile = 3;
     string nickName = 4;
+    // 举例这个字段最终会加上这个结构体标签且自动首字母大写： `field BirthDay uint64 `protobuf:"varint,5,opt,name=birthDay,proto3" json:"birthDay,omitempty"``
+    // ,这是 Protobuf 标签，给 RPC 框架用的（gRPC/Kitex）
+    // varint压缩编码格式，数字用这个最省流量,5字段编号（必须唯一）,optoptional = 可选字段,name=birthDayProtobuf 里的字段名（小写）,proto3使用 Protobuf 3 语法标准
+    // JSON 标签，给 HTTP 接口返回用,birthDayJSON 输出时的字段名（小驼峰）,omitempty如果字段值为 0，就不输出到 JSON 里
     uint64 birthDay = 5;
     string gender = 6;
     int32 role = 7;

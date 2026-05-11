@@ -40,6 +40,9 @@
     - [4-15 hasmany关系](#4-15-hasmany关系)
     - [4-16 gorm处理多对多的关系](#4-16-gorm处理多对多的关系)
     - [4-17 gorm的表名自定义，自定义beforecreate逻辑](#4-17-gorm的表名自定义自定义beforecreate逻辑)
+    - [补充](#补充)
+      - [gorm的Scopes作用域概念](#gorm的scopes作用域概念)
+      - [gorm的分页](#gorm的分页)
 
 
 ## 1章：项目需求分析
@@ -498,3 +501,58 @@ type Company struct {
 我们的表名是根据type结构体的名称后面加复数的形式来完成的。
 
 一些增删改查都有提供对应的钩子，见https://gorm.io/zh_CN/docs/create.html#%E5%88%9B%E5%BB%BA%E9%92%A9%E5%AD%90
+
+
+### 补充
+
+#### gorm的Scopes作用域概念
+1. Scopes = 通用查询逻辑的「封装复用工具」
+   1. 可以把通用的查询条件、排序、分页、过滤，封装成一个函数，然后任何查询都能直接用，不用重复写代码
+   2. Scopes 就是接收一个返回 func(*gorm.DB) *gorm.DB 的函数
+   3. 它的作用：给查询自动拼接 SQL 条件（where、limit、order、joins 等）
+      1. 用途：where、排序、分页、过滤、通用条件,可以带参数，非常灵活,企业项目里大量使用（分页、状态过滤、权限控制）
+   4. 带参数的写法：就是使用闭包来传递参数，调用结果返回一个函数
+2. Scopes 到底解决什么问题？
+   1. 解决重复代码
+   2. 以前要到处写：db.Where("status = 1").Where("age > 18").Find(...)，后面可以直接用Scopes封装
+
+```go
+// 示例:以前你要到处写死这个where条件
+db.Where("status = 1").Where("age > 18").Find(...)
+// 你封装一个 Scope：这就是一个 scope：只查询状态=正常的用户
+func ActiveUsers(db *gorm.DB) *gorm.DB {
+    return db.Where("status = ?", 1)
+}
+// 任何查询直接用：自动带上 status=1
+db.Scopes(ActiveUsers).Find(&users)
+// 生成的 SQL
+// SELECT * FROM users WHERE status = 1
+```
+#### gorm的分页
+- 分页就是最经典的 Scope
+```go
+// 分页 = 告诉数据库：我只要第几页、每页几条
+// GORM 用两个关键字实现：先Offset（跳过前几条）再 Limit（取几条）
+func Paginate(page, pageSize int) func(db *gorm.DB) *gorm.DB {
+  return func(db *gorm.DB) *gorm.DB {
+    // 异常边界处理
+		if page == 0 {
+			page = 1
+		}
+
+		switch {
+      // 设置边界条件：最大100最小10
+		case pageSize > 100:
+			pageSize = 100
+		case pageSize <= 0:
+			pageSize = 10
+		}
+    // 计算跳过多少条
+		offset := (page - 1) * pageSize
+    // 给 DB 加上 Offset 和 Limit
+		return db.Offset(offset).Limit(pageSize)
+	}
+}
+// 最终拿到的就是具体的分页某一页的数据： 第 1 页，每页 10 条的数据
+db.Scopes(Paginate(1, 10)).Find(&users)
+```
