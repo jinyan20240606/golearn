@@ -91,6 +91,42 @@
   - 需要引入gorm数据库实例去查询数据
 - 建立 user_srv/global/global.go 全局变量，里面定义了数据库连接等公共引用方法使用
 
+### 1-7 通过id和mobile查询用户
+
+- 见 user_srv/handler/user.go 文件，来实现proto中的GetUserByMobile和GetUserByMobile方法的具体定义
+	
+    // Go 里面几乎所有：
+	// gRPC 响应
+	// 业务返回值
+	// 较大的结构体
+	// 全部统一返回指针，不返回值
+
+### 1-8 新建用户接口
+- 见 user_srv/handler/user.go 文件的CreateUser方法
+
+### 1-9 修改用户和校验密码接口
+
+- 见 user_srv/handler/user.go 文件的UpdateUser方法
+
+### 1-10 通过flag启动grpc服务
+
+启动这个grpc服务，测试下前面写的grpc的接口
+
+> 见mxshop_srvs/user_srv/main.go文件
+
+1. 使用go语言内置的flag包，来解析命令行参数，解析用户传入的ip和端口号动态启动grpc-server
+   1. `ip := flag.String("ip", "0.0.0.0", "ip地址")：`
+      1. 第一个参数："ip"，命令行参数的名字 `./program -ip=192.168.1.100`
+      2. 第二个参数：默认值
+      3. 第三个参数：参数的描述 用 `./program -help` 命令查看参数的描述
+   2. `flag.Parse()  // 必须触发执行解析`
+   3. `fmt.Println("IP：", *ip)`
+      1. 小细节: flag.方法 返回的是 *string 指针,所以使用时要 加 *
+   4. 使用时用`main.exe  -ip=192.168.1.100`
+
+
+### 1-12 测试用户微服务接口
+
 
 ## 9周 用户服务的web服务
 

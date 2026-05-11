@@ -97,7 +97,11 @@ func (s *UserServer) GetUserByMobile(ctx context.Context, req *proto.MobileReque
 	if result.Error != nil {
 		return nil, result.Error
 	}
-
+	// Go 里面几乎所有：
+	// gRPC 响应
+	// 业务返回值
+	// 较大的结构体
+	// 全部统一返回指针，不返回值
 	userInfoRsp := ModelToRsponse(user)
 	return &userInfoRsp, nil
 }
@@ -149,14 +153,17 @@ func (s *UserServer) UpdateUser(ctx context.Context, req *proto.UpdateUserInfo) 
 	if result.RowsAffected == 0 {
 		return nil, status.Errorf(codes.NotFound, "用户不存在")
 	}
-
+	// req.BirthDay 是时间戳（int 类型）
+	// time.Unix(...) 把它变成 time.Time 类型。1参是时间戳的秒数，2参是时间戳的纳秒数（这里没有，所以写0）
 	birthDay := time.Unix(int64(req.BirthDay), 0)
 	user.NickName = req.NickName
+	// user.Birthday 的类型是 time.Time（指针），所以赋值时写指针地址
 	user.Birthday = &birthDay
 	user.Gender = req.Gender
 
 	result = global.DB.Save(&user)
 	if result.Error != nil {
+		// 没保存成功，是数据库的问题，属于内部的错误问题
 		return nil, status.Errorf(codes.Internal, result.Error.Error())
 	}
 	return &empty.Empty{}, nil
