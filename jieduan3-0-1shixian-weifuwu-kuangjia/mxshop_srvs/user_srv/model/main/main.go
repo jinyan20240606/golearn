@@ -61,7 +61,7 @@ func main() {
 	newPassword := fmt.Sprintf("$pbkdf2-sha512$%s$%s", salt, encodedPwd)
 	fmt.Println(newPassword)
 
-	// 循环生成10个用户：一次性插入 10 条用户数据，密码都是 admin123（加密存储）
+	// 初始化--循环生成10个用户：一次性插入 10 条用户数据，密码都是 admin123（加密存储）
 	for i := 0; i < 10; i++ {
 		user := model.User{
 			NickName: fmt.Sprintf("bobby%d", i),

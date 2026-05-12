@@ -127,9 +127,123 @@
 
 ### 1-12 测试用户微服务接口
 
+- 见user_srv/tests 文件夹
+
 
 ## 9周 用户服务的web服务
 
+> 整体见 mxshop-api目录
+
+### 1章 web层开发-基础项目架构
+
+#### 1-1 新建项目和目录结构
+
+- 新建mxshop-api/user-web项目 和对应的目录结构合理划分
+
+#### 1-2 go高性能日志库
+- 特点
+  - 性能极高：比 gin 默认 log 快 10~100 倍
+  - 结构化日志：JSON 格式，方便排查问题
+  - 可输出到文件：自动写日志文件
+  - 可分级：Debug / Info / Warn / Error / DPanic / Panic / Fatal
+  - 生产环境标准库：公司 Go 项目几乎都用 zap
+```go
+// 安装
+go get go.uber.org/zap
+// 文件使用
+package main
+
+import "go.uber.org/zap"
+
+func main() {
+	// 生产环境配置
+	logger, _ := zap.NewProduction()
+	defer logger.Sync() // 刷新缓冲区
+
+	// 打日志
+	logger.Info("服务启动成功",
+		zap.String("ip", "0.0.0.0"),
+		zap.Int("port", 8080),
+	)
+
+	logger.Error("数据库连接失败",
+		zap.Error(fmt.Errorf("connection timeout")),
+	)
+}
+
+
+
+// ========= 替换 Gin 框架默认日志 ========
+router := gin.Default()
+
+// 把 gin 的日志替换成 zap
+router.Use(ginzap.Ginzap(log, time.RFC3339, true))
+```
+
+- 使用zap库，来替换gin框架自带的日志中间件库，来实现日志的输出
+- Gin 默认 Logger 有什么问题？（重点）
+    1. 不能输出到文件，只能打印控制台，不能写文件，生产环境没法用。
+    2. 格式固定，不能自定义，只能是它那一种格式，不能改成 JSON。
+    3. 没有日志级别，没有 Debug / Info / Error 区分，所有日志混在一起。
+    4. 性能一般，小项目没问题，高并发下性能不如 zap。
+    5. 不能按天切割、不能自动清理，日志越来越大，撑爆磁盘。
+    6. 不方便日志收集，不是结构化 JSON，ELK 之类的工具不好解析
+
+#### 1-3 zap的文件输出
+
+```go
+package main
+
+import (
+	"os"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+func main() {
+	// 1. 创建日志文件（没有会自动创建，有就覆盖）
+	logFile, err := os.OpenFile("run.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		panic("日志文件创建失败")
+	}
+
+	// 2. 配置日志格式
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder // 时间格式：2025-01-01 10:00:00
+	encoderConfig.TimeKey = "time"                        // 时间字段名
+
+	// 3. 核心：日志输出到【文件】
+	core := zapcore.NewCore(
+		zapcore.NewJSONEncoder(encoderConfig), // 日志格式：JSON
+		logFile,                               // 输出目标：文件
+		zap.InfoLevel,                         // 日志级别：Info及以上
+	)
+
+	// 4. 创建 logger（带文件名+行号）
+	logger := zap.New(core, zap.AddCaller())
+	defer logger.Sync() // 程序退出前把日志刷入文件
+
+	// ============== 使用 ==============
+	logger.Info("服务启动成功", zap.String("ip", "0.0.0.0"))
+	logger.Error("数据库连接失败", zap.Int("code", 500))
+}
+```
+
+#### 1-4 集成zap和路由初始到gin的启动过程
+
+- web服务我们使用gin框架，将gin框架安装到我们项目中
+- gin-web服务框架的默认启动用法，就不能用简单的demo方式启动了，需要适配现在的工程化的方式启动，我们需要按照我们的目录结构来
+  - gin的初始化单独封装在`initialize/router.go`模块中，暴露Router方法，在main文件中初始时调用`initialize.Routers()`，且自顶向下传递得到的路由实例
+  - api的统一放到api目录下分模块见子文件
+    - api接口的代码专门存放web-server的接口api逻辑，处理用户的请求，调用grpc的服务端接口，返回结果给前端
+    - 先建立`api/user.go文件`
+  - router路由相关的专门放到router目录下维护，其他目录下都是服务
+    - router是路由入口，负责调用api接口
+    - 先建立`router/user.go文件`
+
+
+### 2章 web层开发-用户接口开发
 
 
 
