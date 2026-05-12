@@ -19,21 +19,23 @@ func GetEnvInfo(env string) bool {
 	//刚才设置的环境变量 想要生效 我们必须得重启goland
 }
 
-func InitConfig(){
+func InitConfig() {
+	// 获取环境变量
 	debug := GetEnvInfo("MXSHOP_DEBUG")
 	configFilePrefix := "config"
+	// 获取不同的配置文件
 	configFileName := fmt.Sprintf("user-web/%s-pro.yaml", configFilePrefix)
 	if debug {
 		configFileName = fmt.Sprintf("user-web/%s-debug.yaml", configFilePrefix)
 	}
 
 	v := viper.New()
-	//文件的路径如何设置
+	// 读取配置文件
 	v.SetConfigFile(configFileName)
 	if err := v.ReadInConfig(); err != nil {
 		panic(err)
 	}
-	//这个对象如何在其他文件中使用 - 全局变量
+	//这个绑定的配置结构体如何在其他文件中使用 - 全局变量--放在user-web/global/global.go 文件统一维护
 	if err := v.Unmarshal(global.NacosConfig); err != nil {
 		panic(err)
 	}
@@ -43,11 +45,11 @@ func InitConfig(){
 	sc := []constant.ServerConfig{
 		{
 			IpAddr: global.NacosConfig.Host,
-			Port: global.NacosConfig.Port,
+			Port:   global.NacosConfig.Port,
 		},
 	}
 
-	cc := constant.ClientConfig {
+	cc := constant.ClientConfig{
 		NamespaceId:         global.NacosConfig.Namespace, // 如果需要支持多namespace，我们可以场景多个client,它们有不同的NamespaceId
 		TimeoutMs:           5000,
 		NotLoadCacheAtStart: true,
@@ -76,7 +78,7 @@ func InitConfig(){
 	//fmt.Println(content) //字符串 - yaml
 	//想要将一个json字符串转换成struct，需要去设置这个struct的tag
 	err = json.Unmarshal([]byte(content), &global.ServerConfig)
-	if err != nil{
+	if err != nil {
 		zap.S().Fatalf("读取nacos配置失败： %s", err.Error())
 	}
 	fmt.Println(&global.ServerConfig)

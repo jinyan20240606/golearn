@@ -188,6 +188,32 @@ router.Use(ginzap.Ginzap(log, time.RFC3339, true))
     4. 性能一般，小项目没问题，高并发下性能不如 zap。
     5. 不能按天切割、不能自动清理，日志越来越大，撑爆磁盘。
     6. 不方便日志收集，不是结构化 JSON，ELK 之类的工具不好解析
+- Zap 有两种 logger：
+  - Logger（原味，高性能）
+    - 调用：logger.Info("msg", zap.String("k", "v"))
+    - 特点：最快、无反射、类型安全；但写起来啰嗦。
+  - SugaredLogger（加糖，易用,性能略低一点点）
+    - 获取：sugar := logger.Sugar() 或 sugar := zap.NewExample().Sugar()
+    - sugar.Info("msg", "k", "v")
+    - sugar.Infof("name=%s age=%d", "tom", 18)
+- 获取全局loagger的简便写法，初始化一次不用子孙传递获取，直接用简写方法就能获取到全局实例
+  - zap.S() 相当于logger.Sugar() .简写，直接获取全局的
+  - zap.L() 相当于logger.Logger()，简写，直接获取全局的
+```go
+package main
+
+import "go.uber.org/zap"
+
+func main() {
+	// 1. 初始化一次
+	logger, _ := zap.NewProduction()
+	zap.ReplaceGlobals(logger) // 变成全局
+	defer logger.Sync()
+
+	// 2. 直接用！！！
+	zap.L().Info("服务启动成功") // L() = 全局 logger
+}
+```
 
 #### 1-3 zap的文件输出
 
@@ -230,7 +256,7 @@ func main() {
 }
 ```
 
-#### 1-4 集成zap和路由初始到gin的启动过程
+#### 1-4&5 集成zap和路由初始到gin的启动过程
 
 - web服务我们使用gin框架，将gin框架安装到我们项目中
 - gin-web服务框架的默认启动用法，就不能用简单的demo方式启动了，需要适配现在的工程化的方式启动，我们需要按照我们的目录结构来
@@ -241,6 +267,61 @@ func main() {
   - router路由相关的专门放到router目录下维护，其他目录下都是服务
     - router是路由入口，负责调用api接口
     - 先建立`router/user.go文件`
+- 全局logger初始化也封装在`initialize/logger.go`中，暴露Logger方法，在main文件中初始时调用`initialize.Logger()`
+
+#### 1-6&7 gin调用grpc服务
+
+- 见`mxshop-api/user-web/router/user.go` 和 `mxshop-api/user-web/api/user.go`
+
+- 先实现的api/user.go的GetUserList接口方法
+
+#### 1-8 go的配置文件管理库：viper库
+
+Viper = Go 一站式配置管理工具，遵循 12-Factor，统一管理所有配置源，无需硬编码、无需关心格式。
+
+核心功能（全覆盖）
+
+✅ 多格式支持：YAML、JSON、TOML、HCL、INI、env、properties
+
+✅ 多配置源：配置文件、环境变量、命令行参数、远程配置（etcd/Consul）、默认值
+
+✅ 热加载：监听文件变化，自动重新读取（热更新）
+
+✅ 结构体绑定：Unmarshal 到 Go 结构体，类型安全
+
+✅ 优先级合并：自动按优先级覆盖，无需手动处理
+
+✅ 大小写不敏感：Key 不区分大小写
+
+```js
+一、核心特点
+
+多格式兼容支持 YAML、JSON、TOML、INI、HCL、Properties 等主流配置格式，不用改代码随意切换格式。
+多配置来源统一管理配置来源全覆盖：本地配置文件、环境变量、命令行参数、内存默认值、远程配置中心（etcd/Consul）。
+自动配置优先级内置固定优先级：代码 Set > 命令行 > 环境变量 > 配置文件 > 远程配置 > 默认值高层自动覆盖低层，不用自己手写覆盖逻辑。
+支持配置热加载可监听配置文件变化，自动重新加载，不用重启服务就能更新配置。
+结构体绑定支持直接把配置 Unmarshal 绑定到结构体，类型安全，告别零散 GetString/GetInt 硬编码。
+键名大小写不敏感配置 key 大小写不区分，书写更随意，减少大小写报错。
+层级配置支持完美支持嵌套层级配置（如 app.port、db.host），适合复杂项目结构。
+零侵入、易集成无复杂依赖，接入简单，所有 Go 项目（单体、微服务、CLI 工具）都能直接用。
+```
+
+- Viper 优势：多格式、多来源、自动优先级、热加载、结构体绑定，把 Go 项目配置从「手写硬编码」变成「标准化、优雅、可维护」的统一方案
+- viper练习目录见：`viper_test/ch01目录`
+
+#### 1-9 viper的配置环境开发环境和生产环境
+
+- 目录见：`viper_test/ch02目录`
+
+#### 1-10 viper集成到gin的web服务中
+
+> 见mxshop-api/user-web
+
+- 创建2个配置文件config-debug和config-pro.yaml，集成到该web项目中
+- 支持配置后，`api/user.go`的grpc客户端初始化时下就不用硬编码host和端口号了
+- 创建全局配置文件：`mxshop-api/user-web/config/config.go`
+- 接着在哪里读取初始化全局配置文件，见单独的模块目录中：`mxshop-api/user-web/initialize/config.go`
+  - 在这里封装全局的初始化方法读取全局配置文件，如初始化grpc客户端
 
 
 ### 2章 web层开发-用户接口开发

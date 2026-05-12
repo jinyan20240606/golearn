@@ -18,7 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/codes" // grpc的状态status与codes的状态码是一一对应的
 	"google.golang.org/grpc/status"
 
 	"mxshop-api/user-web/forms"
@@ -35,10 +35,13 @@ func removeTopStruct(fileds map[string]string) map[string]string {
 	return rsp
 }
 
+// 将grpc的code转换成http的状态码
 func HandleGrpcErrorToHttp(err error, c *gin.Context) {
 	//将grpc的code转换成http的状态码
 	if err != nil {
+		// grpc里的FromError错误信息的函数，判断是否是grpc的错误
 		if e, ok := status.FromError(err); ok {
+			// grpc的状态与codes的状态码是一一对应的
 			switch e.Code() {
 			case codes.NotFound:
 				c.JSON(http.StatusNotFound, gin.H{
@@ -79,10 +82,14 @@ func HandleValidatorError(c *gin.Context, err error) {
 	return
 }
 
+// 获取用户列表的接口（涉及调用user_srv中的grpc接口服务）
 func GetUserList(ctx *gin.Context) {
 	//拨号连接用户grpc服务器 跨域的问题 - 后端解决 也可以前端来解决
+	// 1. 从 Gin 上下文里取出 登录用户的 JWT 解析信息
 	claims, _ := ctx.Get("claims")
+	// 2. 类型断言：转成我们自定义的 JWT 结构体
 	currentUser := claims.(*models.CustomClaims)
+	// 3. 【重点】打日志：记录是谁访问了接口
 	zap.S().Infof("访问用户: %d", currentUser.ID)
 	//生成grpc的client并调用接口
 
@@ -90,11 +97,13 @@ func GetUserList(ctx *gin.Context) {
 	pnInt, _ := strconv.Atoi(pn)
 	pSize := ctx.DefaultQuery("psize", "10")
 	pSizeInt, _ := strconv.Atoi(pSize)
-
+	// 2. 调用 gRPC 服务端的 GetUserList 接口
+	// 已经在初始化模块中user-web/initialize/srv_conn.go 初始化了grpc客户端的拨号
 	rsp, err := global.UserSrvClient.GetUserList(context.Background(), &proto.PageInfo{
 		Pn:    uint32(pnInt),
 		PSize: uint32(pSizeInt),
 	})
+	// 3. 将内部grpc调用接口，转化成http消息返回给前端
 	if err != nil {
 		zap.S().Errorw("[GetUserList] 查询 【用户列表】失败")
 		HandleGrpcErrorToHttp(err, ctx)
@@ -106,18 +115,27 @@ func GetUserList(ctx *gin.Context) {
 	}
 	result := make([]interface{}, 0)
 	for _, value := range rsp.Data {
+		// 业务中一般封装统一的web接口消息响应类型结构体
 		user := reponse.UserResponse{
 			Id:       value.Id,
 			NickName: value.NickName,
+			// value.BirthDay = 1735689600  // 时间戳格式
+			// time.Unix：把秒级时间戳 + 纳秒，转成 Go 的 time.Time 对象
+			// time.Time(time.Unix(int64(value.BirthDay), 0)) --- > 如果不format默认会JSON转换时带国际时区
 			//Birthday: time.Time(time.Unix(int64(value.BirthDay), 0)).Format("2006-01-02"),
+			// 结果："2025-01-01" 字符串，适合：直接返回给前端显示
+
+			// reponse.JsonTime() 这个不是方法，这是类型强制转换，把右边的 time.Time 类型 → 强转成你自定义的 JsonTime 类型（只是实现了一个内部扩展的接口底层类型是一样的）
 			Birthday: reponse.JsonTime(time.Unix(int64(value.BirthDay), 0)),
-			Gender:   value.Gender,
-			Mobile:   value.Mobile,
+			// 结果：项目自定义的 JsonTime 类型，适合：结构体统一格式化时间
+			Gender: value.Gender,
+			Mobile: value.Mobile,
 		}
 		result = append(result, user)
 	}
 
 	reMap["data"] = result
+	// c.JSON(data) 函数就会把 data 序列化成 JSON 字符串(并调用reponse.JsonTime中实现的扩展MarshalJSON函数)，并返回给前端
 	ctx.JSON(http.StatusOK, reMap)
 }
 

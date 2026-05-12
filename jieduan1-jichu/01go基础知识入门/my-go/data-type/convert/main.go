@@ -5,8 +5,10 @@ import "strconv"
 
 // 类型的转换
 func main() {
-	var a int = 10
-	var a1 = uint8(a) // int 转 uint8，需要显式转换
+	var a int = 65
+	cc := string(a)      // 不会报错，按照字符对应的码点转成字符串
+	println("99999", cc) // 99999 A
+	var a1 = uint8(a)    // int 转 uint8，需要显式转换
 	var b float64 = 5.5
 	var b1 = int64(b) // float64 转 int64，会舍弃小数部分
 

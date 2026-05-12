@@ -34,7 +34,7 @@ func main() {
 	if err := initialize.InitTrans("zh"); err != nil {
 		panic(err)
 	}
-	//5. 初始化srv的连接
+	//5. 初始化srv的连接 (包含grpc客户端的初始化)
 	initialize.InitSrvConn()
 
 	viper.AutomaticEnv()
@@ -69,7 +69,7 @@ func main() {
 	/*
 		1. S()可以获取一个全局的sugar，可以让我们自己设置一个全局的logger
 		2. 日志是分级别的，debug， info ， warn， error， fetal
-		3. S函数和L函数很有用， 提供了一个全局的安全访问logger的途径
+		3. S函数和L函数很有用， 提供了一个全局的安全访问logger的途径，它内部是封装的原子操作指令，不会出现多协程高并发时数据读写竞争
 	*/
 	zap.S().Debugf("启动服务器, 端口： %d", global.ServerConfig.Port)
 	if err := Router.Run(fmt.Sprintf(":%d", global.ServerConfig.Port)); err != nil {

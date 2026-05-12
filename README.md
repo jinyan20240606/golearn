@@ -26,7 +26,16 @@
 
 ### 常用遗忘方法
 1. strings.SplitN(字符串, 分隔符, 切成几段)
-2. Go JSON库的标签常见语法
+2. time方法
+   1. `time.Unix(int64(value.BirthDay), 0)`
+      1. func Unix(sec int64, nsec int64) Time
+      2. 作用： 把秒级时间戳 + 纳秒，转成 Go 的 time.Time 对象
+      3. 10位秒级时间戳如： timestamp := int64(1735689600)
+   2. time.Now()
+      1. 返回值：time.Time 结构体，含义：系统当前完整时间对象（年月日时分秒时区都有）
+   3. time.Now().Unix() ：获取当前时间戳，返回值：int64
+   4. time.Time：它是一个对象 / 结构体，里面存了：年、月、日、时、分、秒、纳秒、时区……，所有时间操作都靠它
+3. Go JSON库的标签常见语法
    1. 
    ```go
    type LoginForm struct {
