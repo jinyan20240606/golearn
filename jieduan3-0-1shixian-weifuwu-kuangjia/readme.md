@@ -447,6 +447,58 @@ jwt官网可以在线校验测试
     - `mxshop-api/user-web/middlewares/admin.go`
 
 
-#### 2JWTAuth方法 鉴权中间件，校验token
+#### 2-8 解决前后端的跨域问题
+
+通过后端的cors解决跨域问题：`middlewares/cors.go`
+
+1. 案例演示：前端页面部署在localhost:8080，后端服务部署在localhost:8888
+   1. 浏览器发起ajax请求，现在虽然跨域直接请求后端接口可以成功先不管浏览器同源策略问题，加了beforeSend 请求头，就会发起options预检请求
+2. 浏览器在什么情况下会发起options预检请求?
+   1. 在非简单请求且跨域的情况下，浏览器会发起options预检请求。Preflighted Requests是CORS中一种透明服务器验证机制，预检请求首先需要向另外一个域名的资源发送一个HTTPOPTIONS请求头，其目的就是为了判断实际发送的请求是否是安全的。
+   2. 哪些是简单请求哪些是非简单请求？
+3. 关于简单请求和复杂请求:
+   1. 简单请求：简单请求需满足以下两个条件
+      1. 请求方法是以下三种方法之一:
+         1. HEAD
+         2. GET
+         3. POST
+      2. HTTP的头信息不超出以下几种字段
+         1. Accept
+         2. Accept-Language
+         3. Content-Language
+         4. Last-Event-ID
+         5. Content-Type: 只于 (application/x-ww-form-urlencoded, multipart/form-data, text/plain)
+   2. 复杂请求：复杂请求需满足以下条件
+      1. 非简单请求即复杂请求，常见的复杂请求如
+         1. 请求方法如PUT、DELETE、PATCH
+         2. Content-Type字段类型为：application/json, application/xml, text/xml, text/html
+         3. 添加额外的请求头：比如x-access-token
+4. 跨域的情况下，非简单请求会先发起一次空body的OPTIONS请求，称为“预检”请求，--预检流程如下：
+   1. 先自动发 OPTIONS 预检请求 问后端：允许我跨域吗？允许这个方法、这个请求头吗？
+   2. 后端返回跨域响应头
+   3. 预检通过 → 再发真实业务请求
+   4. 预检失败 → 直接拦截，根本不发真实请求
+5. 浏览器的预检请求结果可以通过设置Access-Control-Max-Age进行缓存
+6. 跨域被浏览器拦截，一定是 OPTIONS 预检失败吗？----> 答案：不一定！分两种
+   1. 情况 1：简单请求跨域（GET / 普通 POST、无自定义头）
+      1. 不发 OPTIONS
+      2. 直接发真实请求
+      3. 后端正常返回数据
+      4. 浏览器拿到响应后，同源策略校验不通过，直接拦截不报预检错
+   2. 情况 2：非简单请求（有自定义头、JSON、PUT/DELETE）
+      1. 先发 OPTIONS 预检
+      2. 后端没配置跨域头 → 预检失败
+      3. 浏览器直接拦截，真实请求都不会发出去
+7. 用cors方式解决跨域---- 一定是需要后端返回允许的响应头就行了，不一定跟options响应处理强相关
+   1. 简单请求不触发 OPTIONS 没关系，CORS 头照样返回，浏览器看见这些头照样放行；
+   2. 非简单请求会触发 OPTIONS，代码里处理一下返回 204 即可。
+
+**回到业务改动**
+
+- 由于我们现在加了token机制，需要前端携带hedar中token发起请求，所以浏览器自动会发送options请求，因为token实现之前浏览器不会触发options请求，所以我们需要在接口中专门添加一个options请求处理响应逻辑
+  - 我们创建user-web/middlewares/cors.go 文件
+    - 主要负责给所有请求设置允许跨域的响应头
+      - 只要加了这个就能避免浏览器的同源策略
+    - 顺带处理options请求的正确响应的处理的，options请求返回204状态码
 
 ## 10周 服务注册发现，配置中心，负载均衡
