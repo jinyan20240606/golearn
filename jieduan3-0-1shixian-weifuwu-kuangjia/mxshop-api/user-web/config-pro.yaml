@@ -9,3 +9,10 @@ group: 'pro'
 # 存放jwt的key统一配置----后续可能直接迁移到nacos配置中
 jwt: 
   key: '76hfhfhfhhrtg5'
+
+sms:
+  key: '8a216daa7d7c4c0f9c0f7c5c5f7a0a0a'
+  secret: 'f7c5c5f7a0a0a'
+redis:
+  host: '192.168.1.103'
+  port: 6379

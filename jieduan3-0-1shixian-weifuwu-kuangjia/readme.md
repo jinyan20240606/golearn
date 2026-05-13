@@ -520,5 +520,11 @@ jwt官网可以在线校验测试
   - 链接docekr中的redis服务
     - 可以用redis-cli命令链接，或者用gui工具：redis-desktop-manager链接后，可以使用redis-cli命令链接redis
 
+#### 2-11 redis保存验证吗
+
+1. 把sms相关的能抽离成配置的，都抽离到配置中去，借助config模块和initialize模块
+   1. 作为RedisConfig 和AliSmsConfig 抽离到config模块中
+2. 接着在yaml中添加配置项即可
+3. go代码中使用redis 链接库：使用该库：`"github.com/go-redis/redis/v8"`
 
 ## 10周 服务注册发现，配置中心，负载均衡

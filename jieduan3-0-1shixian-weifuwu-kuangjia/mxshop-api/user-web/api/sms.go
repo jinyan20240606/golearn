@@ -12,6 +12,8 @@ import (
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/dysmsapi"
 	"github.com/gin-gonic/gin"
+
+	// redis 链接库
 	"github.com/go-redis/redis/v8"
 
 	"mxshop-api/user-web/global"
@@ -46,6 +48,7 @@ func GenerateSmsCode(witdh int) string {
 
 // 发送短信
 func SendSms(ctx *gin.Context) {
+	// 短信验证吗校验
 	sendSmsForm := forms.SendSmsForm{}
 	if err := ctx.ShouldBind(&sendSmsForm); err != nil {
 		HandleValidatorError(ctx, err)
@@ -80,6 +83,8 @@ func SendSms(ctx *gin.Context) {
 	rdb := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%d", global.ServerConfig.RedisInfo.Host, global.ServerConfig.RedisInfo.Port),
 	})
+	// 用代码连接 Redis，把 “手机号” 作为 key，“验证码” 作为 value 存进去，并且设置过期时间。
+	// 短信肯定有过期时间的
 	rdb.Set(context.Background(), sendSmsForm.Mobile, smsCode, time.Duration(global.ServerConfig.RedisInfo.Expire)*time.Second)
 
 	ctx.JSON(http.StatusOK, gin.H{
