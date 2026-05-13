@@ -10,18 +10,19 @@ import (
 	"github.com/go-playground/locales/en"
 	"github.com/go-playground/locales/zh"
 	ut "github.com/go-playground/universal-translator"
-	"github.com/go-playground/validator/v10"
+	"github.com/go-playground/validator/v10" // 验证器v10版本
 	en_translations "github.com/go-playground/validator/v10/translations/en"
 	zh_translations "github.com/go-playground/validator/v10/translations/zh"
 )
 
-func InitTrans(locale string)(err error){
+func InitTrans(locale string) (err error) {
 	//修改gin框架中的validator引擎属性, 实现定制
-	if v, ok := binding.Validator.Engine().(*validator.Validate);ok {
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
 		//注册一个获取json的tag的自定义方法
-		v.RegisterTagNameFunc(func(fld reflect.StructField)string{
+		v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+			// 让错误提示显示 json 里的字段名，而不是结构体字段名！
 			name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
-			if name == "-"{
+			if name == "-" {
 				return ""
 			}
 			return name
@@ -36,7 +37,7 @@ func InitTrans(locale string)(err error){
 			return fmt.Errorf("uni.GetTranslator(%s)", locale)
 		}
 
-		switch locale{
+		switch locale {
 		case "en":
 			en_translations.RegisterDefaultTranslations(v, global.Trans)
 		case "zh":

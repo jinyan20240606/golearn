@@ -47,9 +47,10 @@ func main() {
 		}
 	}
 
-	//注册验证器
+	//注册手机号自定义验证器
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
 		_ = v.RegisterValidation("mobile", myvalidator.ValidateMobile)
+		// 注册自定义错误消息的翻译能力
 		_ = v.RegisterTranslation("mobile", global.Trans, func(ut ut.Translator) error {
 			return ut.Add("mobile", "{0} 非法的手机号码!", true) // see universal-translator for details
 		}, func(ut ut.Translator, fe validator.FieldError) string {

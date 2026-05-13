@@ -27,6 +27,7 @@ import (
 	"mxshop-api/user-web/proto"
 )
 
+// 去除错误提示中的字段名前缀
 func removeTopStruct(fileds map[string]string) map[string]string {
 	rsp := map[string]string{}
 	for field, err := range fileds {
@@ -69,6 +70,7 @@ func HandleGrpcErrorToHttp(err error, c *gin.Context) {
 	}
 }
 
+// 格式化返回验证错误的信息
 func HandleValidatorError(c *gin.Context, err error) {
 	errs, ok := err.(validator.ValidationErrors)
 	if !ok {
@@ -76,6 +78,7 @@ func HandleValidatorError(c *gin.Context, err error) {
 			"msg": err.Error(),
 		})
 	}
+	// 返回带翻译的验证错误信息
 	c.JSON(http.StatusBadRequest, gin.H{
 		"error": removeTopStruct(errs.Translate(global.Trans)),
 	})
@@ -88,6 +91,7 @@ func GetUserList(ctx *gin.Context) {
 	// 1. 从 Gin 上下文里取出 登录用户的 JWT 解析信息
 	claims, _ := ctx.Get("claims")
 	// 2. 类型断言：转成我们自定义的 JWT 结构体
+	// 把上下文中的空接口类型，断言转回自定义的 JWT 用户结构体，从而获取用户 ID、昵称、权限
 	currentUser := claims.(*models.CustomClaims)
 	// 3. 【重点】打日志：记录是谁访问了接口
 	zap.S().Infof("访问用户: %d", currentUser.ID)
@@ -140,7 +144,7 @@ func GetUserList(ctx *gin.Context) {
 }
 
 func PassWordLogin(c *gin.Context) {
-	//表单验证
+	//表单验证：直接采用forms包中统一维护定义的结构体来验证
 	passwordLoginForm := forms.PassWordLoginForm{}
 	if err := c.ShouldBind(&passwordLoginForm); err != nil {
 		HandleValidatorError(c, err)
@@ -154,10 +158,12 @@ func PassWordLogin(c *gin.Context) {
 		return
 	}
 
-	//登录的逻辑
+	// 表单验证后，写下面登录的逻辑
+	// 1、查询用户是否存在
 	if rsp, err := global.UserSrvClient.GetUserByMobile(context.Background(), &proto.MobileRequest{
 		Mobile: passwordLoginForm.Mobile,
 	}); err != nil {
+		// gRPC 错误是用status封装的，所以用 status.FromError 能正常解析
 		if e, ok := status.FromError(err); ok {
 			switch e.Code() {
 			case codes.NotFound:
@@ -172,7 +178,8 @@ func PassWordLogin(c *gin.Context) {
 			return
 		}
 	} else {
-		//只是查询到用户了而已，并没有检查密码
+		//2、只是查询到用户了而已，并没有检查密码
+		// 2-1、检查密码
 		if passRsp, pasErr := global.UserSrvClient.CheckPassWord(context.Background(), &proto.PasswordCheckInfo{
 			Password:          passwordLoginForm.PassWord,
 			EncryptedPassword: rsp.PassWord,
@@ -181,6 +188,7 @@ func PassWordLogin(c *gin.Context) {
 				"password": "登录失败",
 			})
 		} else {
+			// 2-2、返回登录结果
 			if passRsp.Success {
 				//生成token
 				j := middlewares.NewJWT()
@@ -189,9 +197,9 @@ func PassWordLogin(c *gin.Context) {
 					NickName:    rsp.NickName,
 					AuthorityId: uint(rsp.Role),
 					StandardClaims: jwt.StandardClaims{
-						NotBefore: time.Now().Unix(),               //签名的生效时间
+						NotBefore: time.Now().Unix(),               //签名的生效时间--时间戳格式
 						ExpiresAt: time.Now().Unix() + 60*60*24*30, //30天过期
-						Issuer:    "imooc",
+						Issuer:    "imooc",                         // 哪个机构认证的
 					},
 				}
 				token, err := j.CreateToken(claims)

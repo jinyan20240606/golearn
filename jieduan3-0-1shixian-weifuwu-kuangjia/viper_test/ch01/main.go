@@ -7,6 +7,7 @@ import (
 )
 
 type ServerConfig struct {
+	// mapstructure标签：这是viper库专用的标签，把 yaml 配置文件的 key 映射到结构体字段
 	ServiceName string `mapstructure:"name"`
 	Port        int    `mapstructure:"port"`
 }

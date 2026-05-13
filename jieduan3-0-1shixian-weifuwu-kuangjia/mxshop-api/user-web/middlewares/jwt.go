@@ -2,21 +2,23 @@ package middlewares
 
 import (
 	"errors"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/gin-gonic/gin"
 	"mxshop-api/user-web/global"
 	"mxshop-api/user-web/models"
 	"net/http"
 	"time"
+
+	"github.com/dgrijalva/jwt-go"
+	"github.com/gin-gonic/gin"
 )
 
+// JWTAuth 鉴权中间件，校验token
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 我们这里jwt鉴权取头部信息 x-token 登录时回返回token信息 这里前端需要把token存储到cookie或者本地localSstorage中 不过需要跟后端协商过期时间 可以约定刷新令牌或者重新登录
 		token := c.Request.Header.Get("x-token")
 		if token == "" {
 			c.JSON(http.StatusUnauthorized, map[string]string{
-				"msg":"请登录",
+				"msg": "请登录",
 			})
 			c.Abort()
 			return
@@ -28,7 +30,7 @@ func JWTAuth() gin.HandlerFunc {
 			if err == TokenExpired {
 				if err == TokenExpired {
 					c.JSON(http.StatusUnauthorized, map[string]string{
-						"msg":"授权已过期",
+						"msg": "授权已过期",
 					})
 					c.Abort()
 					return
@@ -39,6 +41,7 @@ func JWTAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		// 验证过后将鉴权成功后的claims信息写入上下文，后续的接口处理函数可以从上下文中获取用户信息
 		c.Set("claims", claims)
 		c.Set("userId", claims.ID)
 		c.Next()
@@ -58,6 +61,7 @@ var (
 
 func NewJWT() *JWT {
 	return &JWT{
+		// 将密钥key放在全局变量里使用
 		[]byte(global.ServerConfig.JWTInfo.SigningKey), //可以设置过期时间
 	}
 }

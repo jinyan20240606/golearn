@@ -5,3 +5,7 @@ user: 'nacos'
 password: 'nacos'
 dataid: 'user-web.json'
 group: 'dev'
+
+# 存放jwt的key统一配置----后续可能直接迁移到nacos配置中
+jwt: 
+  key: '76hfhfhfhhrtg5'
