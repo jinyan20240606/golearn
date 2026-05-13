@@ -501,4 +501,16 @@ jwt官网可以在线校验测试
       - 只要加了这个就能避免浏览器的同源策略
     - 顺带处理options请求的正确响应的处理的，options请求返回204状态码
 
+#### 2-9 获取图片验证码
+
+图形验证码没必要走grpc了，直接放在web服务中处理，然后使用`三方库：mojotv`
+
+- 我们专门写一个图片验证码的接口：
+  - 写路由的handler：`mxshop-api/user-web/api/chaptcha.go`
+  - 路由添加处理 `mxshop-api/user-web/router/base.go`
+- 前端在登录界面获取后填写验证码后进行登录接口中验证：`mxshop-api/user-web/api/user.go`的PassWordLogin方法中进行验证
+
+
+#### 2-10 通过阿里云发送短信
+
 ## 10周 服务注册发现，配置中心，负载均衡

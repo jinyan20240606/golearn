@@ -151,6 +151,7 @@ func PassWordLogin(c *gin.Context) {
 		return
 	}
 
+	// 因为与chaptcha文件是在同一个包下的，所以可以直接调用store变量来验证验证码（不用首字母大写。首字母大写 = 公开（public）= 跨包能访问）
 	if store.Verify(passwordLoginForm.CaptchaId, passwordLoginForm.Captcha, false) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"captcha": "验证码错误",
