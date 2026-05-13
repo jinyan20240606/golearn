@@ -78,6 +78,9 @@ func main() {
 	// 'f' 表示使用小数点表示法，'.' 表示小数点，2 表示小数点后保留的位数，64 表示转换的位数
 	var str6 = strconv.FormatFloat(float64(a4), 'f', 2, 64) // 结果："123.46"
 	println(str6)
+	var b11 byte = 'a' // 切记：必须用单引号，不能用双引号
+	var b21 byte = '{'
+	print(b11, b21)
 
 }
 

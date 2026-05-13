@@ -513,4 +513,12 @@ jwt官网可以在线校验测试
 
 #### 2-10 通过阿里云发送短信
 
+- 开始做用户注册的逻辑，用户注册时候需要手机号接收验证码，先做短信的接口
+  - 见`mxshop-api/user-web/api/sms.go`接口实现
+  - 使用阿里云短信发送的服务
+  - 验证码发送后，需要将验证码和关联的手机号保存到redis中，方便后续验证，redis我们用docker启动
+  - 链接docekr中的redis服务
+    - 可以用redis-cli命令链接，或者用gui工具：redis-desktop-manager链接后，可以使用redis-cli命令链接redis
+
+
 ## 10周 服务注册发现，配置中心，负载均衡
