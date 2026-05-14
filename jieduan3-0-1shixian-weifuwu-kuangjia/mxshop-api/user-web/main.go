@@ -43,6 +43,7 @@ func main() {
 	if !debug {
 		port, err := utils.GetFreePort()
 		if err == nil {
+			// 获取随机可用端口号
 			global.ServerConfig.Port = port
 		}
 	}
