@@ -726,3 +726,155 @@ DNS 记录就是：**给域名绑定不同类型的数据**，不同记录干不
 4. **MX**    ：邮件服务器地址
 5. **TXT**   ：存放文本、域名验证
 6. **SRV**   ：服务发现，带**IP+端口+权重优先级**（微服务核心）
+
+
+#### 1-3 服务注册和注销
+
+Consul HTTP API 完整版
+
+1. 注册服务（最常用）
+**POST**
+```go
+http://localhost:8500/v1/agent/service/register
+
+
+
+
+{
+  "ID": "user-service-8080",
+  "Name": "user-service",
+  "Address": "127.0.0.1",
+  "Port": 8080,
+  // 健康检查：一个微服务实例，检查多个子接口，只要有一个失败，这个微服务实例就检查不通过
+  "Checks": [
+    {
+      "HTTP": "http://127.0.0.1:8080/health",
+      "Interval": "10s",
+      "Timeout": "5s"
+    },
+    {
+      "HTTP": "http://127.0.0.1:8080/api/user/info",
+      "Interval": "15s",
+      "Timeout": "5s"
+    }
+  ]
+}
+
+```
+作用：把微服务注册到 Consul  
+携带 JSON：ID、名称、地址、Tags, 端口、健康检查
+（如果没传健康检查配置，则默认不开启健康检查，状态默认显示通过的）
+
+---
+
+1. 注销服务（删除）
+**PUT**
+```
+http://localhost:8500/v1/agent/service/deregister/{服务ID}
+```
+作用：服务下线时调用
+
+---
+
+3. 健康检查相关
+
+3.1 注册检查（一般和服务注册一起发）
+**POST**
+```go
+http://localhost:8500/v1/agent/check/register
+
+{
+  "Name": "user-service-health-check",
+  "ID": "user-service-check-8080",
+  "HTTP": "http://127.0.0.1:8080/health",
+  "Interval": "10s",
+  "Timeout": "5s",
+  "DeregisterCriticalServiceAfter": "30s"
+}
+Name：检查名称，自定义
+ID：检查唯一 ID，不能重复
+HTTP：健康检查接口地址
+Interval：间隔多久探测一次 10s/5s
+Timeout：请求超时时间
+DeregisterCriticalServiceAfter：故障多久自动注销服务（自动下线坏实例，核心功能）
+
+
+
+// 同一个微服务实例，可以在注册时写多条 Checks，检查该微服务下多个接口
+// 只要任意一个检查失败，整个实例就被标记为 critical 不健康，注册中心会标记下线、网关不再转发流量
+```
+
+3.2 查看所有健康检查
+
+**GET**
+```
+http://localhost:8500/v1/agent/checks
+```
+
+---
+
+4. 同一个服务注册多个实例
+**同一个 ServiceName，不同 ServiceID 即可**
+- ServiceName: `user-service`
+- ServiceID: `user-1`、`user-2`、`user-3`
+
+Consul 自动识别为同一服务的多个实例。
+
+---
+
+5. 查询服务（服务发现）
+
+5.1 查询某个服务的所有实例
+**GET**
+```
+http://localhost:8500/v1/health/service/{服务名}
+```
+返回：**健康实例 + IP + 端口 + 状态**  
+网关/微服务调用这个接口做发现。
+
+5.2 查询本机注册的所有服务
+**GET**
+```
+http://localhost:8500/v1/agent/services
+```
+
+
+
+#### 1-4 go 集成 consul的demo练习
+
+> 单独见consul_test目录
+
+由于该项目是web-servet层和grpc服务层，所以gin-web服务层即要做服务注册和注销又要做为web-server向底层调用时的grpc服务的发现功能
+
+#### 1-5 为项目的grpc服务添加viper和zap
+
+需要先将grpc服务集成到consul中，这样才可以在web的gin服务中去发现底层的grpc服务，所以之前web-gin服务中配置文件写死的地址端口号的调用grpc的方式需要改成从consul中获取并调用注册过的grpc微服务
+
+所以第一步grpc服务目前还没有抽成配置化，正确的步骤是先抽成配置化，再把配置化迁移到consul中，所以先在grpc服务中中添加viper和zap
+
+- 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/user_srv`中配置抽离，出config-debug.yaml和config-pro.yaml文件
+
+#### 1-6 grpc服务如何进行健康检查？
+
+- 健康检查是consu内部调用你提供的接口判断响应是否成功，因为gin服务是http接口，直接传地址和端口号就行了，但是grpc是rpc接口用的proto协议传输，直接用http调接口去检查肯定调不通
+  - gRPC 不是 HTTP，不能用 HTTP: "http://x.x.x.x:port/health"
+  - gRPC 有官方标准健康检查协议 → GRPC Check
+  - Consul 原生支持 gRPC 健康检查
+  - Go 语言 gRPC 官方自带健康检查服务器的方法，直接用就行
+- 使用`"google.golang.org/grpc/health/grpc_health_v1" 和 "google.golang.org/grpc/health"` 
+  - 它是 gRPC 官方定义的标准健康检查 proto 服务所有支持 gRPC 健康检查的组件（Consul、K8s、Nginx、网关）全都认它。
+  - 它里面就 2 个东西：
+    - 健康检查接口
+    - 服务状态（正常 / 异常）
+- 代码改动见：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/user_srv/main.go`
+  - 先配置grpc的内置的健康检查服务接口
+    - grpc_health_v1.RegisterHealthServer(server, health.NewServer())
+  - 再注册服务这个grpc服务到consul中
+    - err = client.Agent().ServiceRegister(registration)
+    - 注册对象的字段和http的有一些不同
+
+#### 1-7 将grpc服务注册到consul中
+
+- 代码改动见：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/user_srv/main.go`
+
+#### 1-8 gin集成consul

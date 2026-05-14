@@ -11,6 +11,8 @@ import (
 	uuid "github.com/satori/go.uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+
+	// 专门用于健康检查的grpc接口
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
@@ -20,6 +22,7 @@ import (
 	"mxshop_srvs/user_srv/proto"
 	"mxshop_srvs/user_srv/utils"
 
+	// consul 的 go客户端
 	"github.com/hashicorp/consul/api"
 )
 
@@ -32,6 +35,7 @@ func main() {
 	initialize.InitLogger()
 	initialize.InitConfig()
 	initialize.InitDB()
+	// 打印配置信息
 	zap.S().Info(global.ServerConfig)
 	// 触发解析命令行参数解析方法----将结果注入到变量中
 	flag.Parse()
@@ -52,6 +56,7 @@ func main() {
 		panic("failed to listen:" + err.Error())
 	}
 	// 注册服务健康检查
+	// 把 gRPC 官方提供的健康检查服务 注册到 gRPC 服务器
 	grpc_health_v1.RegisterHealthServer(server, health.NewServer())
 
 	// 服务注册
@@ -63,8 +68,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	//生成对应的检查对象
+	//生成对应的consul用的检查对象
 	check := &api.AgentServiceCheck{
+		// 必须使用GRPC字段.内部健康检查时用
 		GRPC:                           fmt.Sprintf("192.168.0.103:%d", *Port),
 		Timeout:                        "5s",
 		Interval:                       "5s",
@@ -78,10 +84,13 @@ func main() {
 	registration.ID = serviceID
 	registration.Port = *Port
 	registration.Tags = []string{"imooc", "bobby", "user", "srv"}
+	// 外部服务发现使用
 	registration.Address = "192.168.0.103"
 	registration.Check = check
 	//1. 如何启动两个服务
 	//2. 即使我能够通过终端启动两个服务，但是注册到consul中的时候也会被覆盖
+
+	// 注册这个grpc服务到consul中
 	err = client.Agent().ServiceRegister(registration)
 	if err != nil {
 		panic(err)

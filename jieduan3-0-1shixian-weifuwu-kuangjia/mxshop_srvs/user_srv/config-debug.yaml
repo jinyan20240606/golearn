@@ -5,3 +5,9 @@ user: 'nacos'
 password: 'nacos'
 dataid: 'user-srv.json'
 group: 'dev'
+
+
+# 存放consule统一配置----后续可能直接迁移到nacos配置中
+# consul:
+#   host: '192.168.0.104'
+#   port: 8500
