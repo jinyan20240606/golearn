@@ -878,3 +878,51 @@ http://localhost:8500/v1/agent/services
 - 代码改动见：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/user_srv/main.go`
 
 #### 1-8 gin集成consul
+
+1. grpc微服务-user_srv 中已经向consul注册中心注册过服务了
+2. 在`mxshop-api/user-web/initialize/srv_conn.go` 全局初始化模块中，向consul发现服务并链接grpc客户端
+   1. 注意这里链接consul的服务进行服务发现，有两种链接方式
+      1. 方式1: grpc.Dial("consul://...")：自己内部会去 consul 拿地址、监听变化、做负载均衡
+         1. 这得借助grpc的 consul 插件：`github.com/mbobakov/grpc-consul-resolver`
+      2. 方式2: client.Agent().ServicesWithFilter(...)：自己写代码去 consul 查 IP、查端口，拿到后自己连
+3. 然后在`mxshop-api/user-web/api/user.go`中用全局初始化的grpc客户端变量去调用grpc微服务
+4. 本节就只实现了GetUserList方法的示例链接服务重构。
+
+#### 1-9 将用户的grpc链接配置到全局可用
+
+- 见文件`mxshop-api/user-web/global/global.go` 将grpc客户端变量抽离为全局变量：UserSrvClient
+- 然后在`mxshop-api/user-web/initialize/srv_conn.go`初始化模块中将grpc客户端变量赋值给全局变量
+- 然后在`mxshop-api/user-web/api/user.go`中直接使用全局客户端变量访问grpc微服务
+
+**目前grpc客户端链接抽离全局变量存在的问题**
+```go
+//1. 后续的用户服务下线了 2. 改端口了 3. 改ip了
+// 这个暂时不在这解决，由后面的grpc负载均衡来做
+意思：
+现在这段代码只管建立连接，不管服务挂了、换 IP、换端口。
+这些问题不是这里处理，而是交给：
+gRPC 服务发现
+gRPC 负载均衡
+健康检查
+它们会自动感知、自动重连、自动换新节点。
+② //2. 当前的好处：已经事先创立好了连接，这样后续就不用进行再次tcp的三次握手
+重点：
+gRPC 用的是 HTTP/2 长连接！建立一次连接，后面一直复用！
+好处：
+不用每次请求都 TCP 三次握手
+不用每次请求都 TLS 握手
+速度极快
+性能极高
+你现在项目启动时就建好连接，后面所有接口都直接用！
+③ //3. 存在的性能问题：一个连接多个groutine共用，性能 - 连接池解决
+问题：
+一个 gRPC 连接，被 100 个协程同时用会出现：
+并发排队
+性能瓶颈
+高并发下会卡
+解决方案（后面做）：
+gRPC 连接池（多个连接复用）
+负载均衡（多个服务实例分担压力）
+```
+### 2章 负载均衡
+

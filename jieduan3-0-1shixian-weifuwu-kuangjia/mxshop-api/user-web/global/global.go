@@ -16,5 +16,6 @@ var (
 	// 通过初始化配置文件时，赋值到这个全局变量，供其他文件直接使用
 	NacosConfig *config.NacosConfig = &config.NacosConfig{}
 
+	// 用户grpc服务客户端全局变量
 	UserSrvClient proto.UserClient
 )
