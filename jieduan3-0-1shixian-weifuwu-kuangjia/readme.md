@@ -527,4 +527,8 @@ jwt官网可以在线校验测试
 2. 接着在yaml中添加配置项即可
 3. go代码中使用redis 链接库：使用该库：`"github.com/go-redis/redis/v8"`
 
+#### 2-12 完成用户注册接口
+
+1. 添加用户注册接口：`mxshop-api/user-web/api/user.go`的Register方法
+
 ## 10周 服务注册发现，配置中心，负载均衡

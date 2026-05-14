@@ -228,23 +228,30 @@ func PassWordLogin(c *gin.Context) {
 
 func Register(c *gin.Context) {
 	//用户注册
+	// ShouldBind 会自动把前端传过来的参数，赋值给你定义的 registerForm 结构体！
+	// 而且它是先赋值 → 再验证，验证不通过就返回错误
 	registerForm := forms.RegisterForm{}
+	// 先通过表单参数验证
 	if err := c.ShouldBind(&registerForm); err != nil {
 		HandleValidatorError(c, err)
 		return
 	}
 
-	//验证码
+	// 验证码校验
 	rdb := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%d", global.ServerConfig.RedisInfo.Host, global.ServerConfig.RedisInfo.Port),
 	})
 	value, err := rdb.Get(context.Background(), registerForm.Mobile).Result()
+	// redis.Nil 错误码，表示 key 不存在，源码是：errors.New("redis: nil")
+	// 它与err对象是同源类型都是errornew出来的错误对象
+	// redis没找到手机号对应的验证码，说明用户输入的手机号没有获取过验证码，或者验证码过期了
 	if err == redis.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code": "验证码错误",
 		})
 		return
 	} else {
+		// 验证码不相同
 		if value != registerForm.Code {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code": "验证码错误",
@@ -253,6 +260,7 @@ func Register(c *gin.Context) {
 		}
 	}
 
+	// 验证码通过，开始调用grpc创建用户
 	user, err := global.UserSrvClient.CreateUser(context.Background(), &proto.CreateUserInfo{
 		NickName: registerForm.Mobile,
 		PassWord: registerForm.PassWord,

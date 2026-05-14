@@ -98,14 +98,25 @@ func handler(c *gin.Context) {
    2. tag内的验证规则：具体看文档全，下面是重点注意的规则
       1. 支持跨字段验证
 3. 此外，Gin还提供了两套绑定方法:
-   1. Must bind
+   1. Must bind (----不常用----)
       1. Methods - Bind, BindJSON, BindXML, BindQuery, BindYAML。
       2. Behavior-这些方法底层使用MustBindwith，
-      3. 特点：如果存在绑定错误直接返回响应和状态码，请求将被以下指令中i上 c.AbortWithError(400, err).SetType (ErrorTypeBind), 响应状态f代码会被设置为400, 请求头Content-Type被设置为text/plain;charset=utf-8.注意，如果你试图在此之后设置响应代码，将会发出一个警告[GIN-debug][WARNING]HeadersWere already written. Wanted to override status code 400 with 422, l果你希望更好地控制行为，请使用ShouldBind相关的方法
+      3. 特点：绑定且验证参数失败 → Gin 自动直接返回 400 错误，中断请求你不能自定义错误返回格式。
    2. Should bind (----常用----)
       1. Methods - ShouldBind, ShouldBindJSON, ShouldBindXML, ShouldBindQuery,ShouldBindYAML
       2. Behavior -这些方法底层使用ShouldBindWith，
       3. 特点：如果存在绑定错误，则返回错误不直接返回响应和状态码，由开发人员可以正确处理请求和错误。
+   3. 易混注意：
+      1. 这些绑定方法，如ShouldBind等 会自动把前端传过来的参数，赋值给你定义的 registerForm 结构体！而且它是先赋值 → 再验证，验证不通过就返回错误。通过后，你可以直接使用 registerForm 获取前端传过来的参数
+      2. Must bind/ShouldBind = 自动根据 Content-Type，ShouldBind 会自动识别前端是 JSON 还是 form 表单，然后赋值
+         1. application/json → JSON 绑定器
+         2. application/x-www-form-urlencoded → form 绑定器
+            1. 优点：省事
+            2. 缺点：不确定、容易出坑
+         3. ShouldBindWith / BindWith = 你手动指定绑定器，不猜
+            1. 更安全、更快、更明确
+            2. 大型项目、生产环境强烈推荐
+            3. 如指定json绑定器：`c.ShouldBindWith(&registerForm, binding.JSON)`
 
 当我们使用绑定方法时，Gin会根据Content-Type推断出使用哪种绑定器，如果你确定你绑定的是什么,你可以使用MustBindwith或者Bindingwith.
 你还可以给字段指定特定规则的修饰符，如果一个字段用binding:“required"修节资源网绑定时该字段的值为空，那么将返回一个错误，

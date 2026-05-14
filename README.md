@@ -48,7 +48,9 @@
    // omitempty：字段为空时，不返回给前端
    // -：忽略这个字段，不序列化、不返回
    ```
+### 在课程中提到的docker技巧
 
+1. 服务器重启，自动启动容器`docker run -d --name nginx -p 80:80 --restart=always nginx`
 ## go语言中的常见规定
 
 ### Go 语言中命名和结构体初始化规定
