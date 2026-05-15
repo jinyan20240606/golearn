@@ -56,7 +56,7 @@ func main() {
 	//fmt.Println(content) //字符串 - yaml
 	serverConfig := config.ServerConfig{}
 	// 把 JSON 字符串转成 Go 结构体
-	//想要将一个json字符串转换成struct，需要去设置这个struct的tag
+	//想要将一个json字符串转换成struct，需要去设置这个struct的tag，否则结果永远是空
 	json.Unmarshal([]byte(content), &serverConfig)
 	fmt.Println(serverConfig)
 
