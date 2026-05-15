@@ -12,14 +12,15 @@ import (
 
 	"mxshop_srvs/user_srv/global"
 )
+
 func GetEnvInfo(env string) bool {
 	viper.AutomaticEnv()
 	return viper.GetBool(env)
 	//刚才设置的环境变量 想要生效 我们必须得重启goland
 }
 
-func InitConfig(){
-	//从配置文件中读取出对应的配置
+func InitConfig() {
+	//从配置文件中读取出对应nacos链接相关的配置
 	debug := GetEnvInfo("MXSHOP_DEBUG")
 	configFilePrefix := "config"
 	configFileName := fmt.Sprintf("user_srv/%s-pro.yaml", configFilePrefix)
@@ -43,11 +44,11 @@ func InitConfig(){
 	sc := []constant.ServerConfig{
 		{
 			IpAddr: global.NacosConfig.Host,
-			Port: global.NacosConfig.Port,
+			Port:   global.NacosConfig.Port,
 		},
 	}
 
-	cc := constant.ClientConfig {
+	cc := constant.ClientConfig{
 		NamespaceId:         global.NacosConfig.Namespace, // 如果需要支持多namespace，我们可以场景多个client,它们有不同的NamespaceId
 		TimeoutMs:           5000,
 		NotLoadCacheAtStart: true,
@@ -76,7 +77,7 @@ func InitConfig(){
 	//fmt.Println(content) //字符串 - yaml
 	//想要将一个json字符串转换成struct，需要去设置这个struct的tag
 	err = json.Unmarshal([]byte(content), &global.ServerConfig)
-	if err != nil{
+	if err != nil {
 		zap.S().Fatalf("读取nacos配置失败： %s", err.Error())
 	}
 	fmt.Println(&global.ServerConfig)

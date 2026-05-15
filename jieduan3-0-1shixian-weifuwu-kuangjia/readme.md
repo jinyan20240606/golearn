@@ -1189,3 +1189,6 @@ gRPC 连接池（多个连接复用）
 1. 改造`mxshop-api/user-web/initialize/config.go`文件，将nacos相关的配置还是本地配置成文件，然后链接nacos后获取服务需要的正式服务使用的配置字段
 
 #### 3-7 user-src服务层集成nacos
+
+1. 先在user_srv下的config增加个NacosConfig结构体
+2. 然后改造下initialize/config.go文件，将nacos相关的配置还是本地配置成文件，然后链接nacos后获取服务需要的正式服务使用的配置字段
