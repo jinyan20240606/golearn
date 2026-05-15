@@ -80,6 +80,7 @@ func main() {
 	//生成注册对象
 	registration := new(api.AgentServiceRegistration)
 	registration.Name = global.ServerConfig.Name
+	// 将每次注册的id设成唯一，name可以一样，但是id必须唯一
 	serviceID := fmt.Sprintf("%s", uuid.NewV4())
 	registration.ID = serviceID
 	registration.Port = *Port
@@ -95,7 +96,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
+	// 这块必须用协程做，否则下面的终止信号
 	go func() {
 		// 【grpc-server启动】4. 启动服务
 		err = server.Serve(lis)
@@ -104,7 +105,7 @@ func main() {
 		}
 	}()
 
-	//接收终止信号
+	//接收终止信号-----终止时注销刚才注册的服务id，否则会一直残留在consul列表中
 	quit := make(chan os.Signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
