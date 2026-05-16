@@ -8,6 +8,7 @@
 
 - 课件代码见商品的grpc服务：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv` 目录
   - 目录结构与用户服务保持一致，能复用的就复用
+- grpc服务写好接口，需要调试测试，因为web服务还没有开发，只能自己用tests文件运行测试
 
 ### 1-1 需求分析-数据库实体分析
 
@@ -85,7 +86,63 @@
 - 见 `jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/model/main/main.go` 来生成数据库创建新表
 
 
-### 1-7 
+### 1-7 定义proto接口
+
+- 建 `jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/proto/goods.proto`
+
+### 1-8 快速启动grpc服务
+
+快速启动学会用`proto.UnimplementedGoodsServer`方法，进行初期快速连通接口测试
+
+- 先完善`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/main.go` 中的启动proto的grpc服务实例
+  - `proto.RegisterGoodsServer(server, &handler.GoodsServer{})`
+- 接着定义handler层，实现proto接口：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/handler/goods.go`
+  - 细节注意：
+  - 开发初期：如果你想快速测试接口的连通性，可以用这个自动生成的UnimplementedGoodsServer结构体：使用`proto.UnimplementedGoodsServer` proto自动生成 --- 只是做初期测试用
+  - 后面开发：就需要自己实现完整具体的GoodsServer结构体方法
+- 添加对应的nacos配置，就可以快速启动了
+
+### 1-9 品牌列表的实现
+
+- 本节实现轮博图和品牌接口的完成
+- 先实现`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/tests/brands.go` 测试文件进行接口开发测试
+  - 由于目前是用UnimplementedGoodsServer快速实现的，接口发现，测试发现会它默认会帮我们自动返回错误的状态码，未实现的错误信息
+- 品牌列表细节注意
+  - 学习到一个返回品牌分页时，返回分页的数据，总数，总数的获取学习使用gorm的`Count()`方法
+    - 文件见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/handler/brands.go`
+
+### 1-10 品牌的其他接口：新建删除更新
+
+- 文件见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/handler/brands.go`
+
+### 1-11 轮播图的增删改查crud
+
+- 文件见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/handler/banner.go`
+
+
+
+### 1-12 商品分类的列表接口1
+
+这个需要重点看下关联表 和多级分类的实现
+
+- 见`mxshop_srvs/goods_srv/handler/category.go`
+  - 重点实现返回适合前端展示的分类大数组结构，包含子分类（一级分类二级分类）
+- 分类列表接口`GetAllCategorysList`：希望返回如下这种嵌套的大json结构给前端，拼装好这种结构我们选择在goods_srv层做，不交给web-服务层做，
+  - 因为这种结构用gorm来做是非常简单的，web-服务一般不与数据库交互，自行拼接是很麻烦的
+    - goods_srv层做我们返回Data原始结构和JsonData拼好的大json结构
+- 先涉及完善分类表结构的自关联语法，子分类切片结构体关联父分类结构体， -- 详见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/model/goods.go`的Category表结构体,自关联外键相关写法
+- 完善后，在我们的接口处理函数`GetAllCategorysList`中使用这种表结构
+  - 使用Preload预加载语法
+- 最后在`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/tests/category/category.go`的`TestGetCategoryList`测试文件中测试接口响应
+
+### 1-13 商品分类的列表接口2
+
+- 前面遇到问题：调用分类的接口，接口响应中只能往下加载一级，不能无限递归加载，
+  - 解决：正确用Preload预加载语法，使用点号语法`Preload("SubCategory.SubCategory")`
+    - 语法：点的数量 = 子分类层数，
+    - 如果有 四级分类就写2个点3段：`Preload("SubCategory.SubCategory.SubCategory")`
+
+### 1-14 获取商品分类的子分类
 
 ## 12周 商品微服务的gin层和oss图片上传
 

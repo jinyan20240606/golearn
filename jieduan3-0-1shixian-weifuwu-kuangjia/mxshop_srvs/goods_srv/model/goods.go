@@ -23,8 +23,7 @@ type Category struct {
 	ParentCategoryID int32 `json:"parent"` // 定义个外键---真正在数据库中存储的外键名称
 	// ParentCategory它的唯一作用：告诉 GORM 这个结构体是 “自关联”，让 GORM 知道用哪个字段去关联查询，它本身不生成数据库字段！，GORM 默认命名规范，外键字段名必须是：关联字段名 + ID（ParentCategory + ID = ParentCategoryID）
 	ParentCategory *Category `json:"-"` // 外键，自己指向自己时，必须得写成指针，否则会无限递归嵌套，字段只给gorm内部逻辑代码用不存库，不给前端返回，不参与 JSON 序列化
-	// foreignKey:ParentCategoryID → 子分类用这个字段关联父
-	// references:ID → 关联的是当前表的主键 ID
+	// 这个字段也是gorm的逻辑字段--后续都是通过gorm预加载赋的相关联值，不建库字段：foreignKey:ParentCategoryID → 子分类用这个字段作为外键关联父的ID即references:ID → 关联的是当前表的主键 ID
 	SubCategory []*Category `gorm:"foreignKey:ParentCategoryID;references:ID" json:"sub_category"`
 	// 我们这里一般都定义成int32，一般不用int，因为后期使用proto和数据库时，都支持int32以上，不支持int，需要频繁转换，所以为了减少转换，直接设置int32
 	Level int32 `gorm:"type:int;not null;default:1" json:"level"`

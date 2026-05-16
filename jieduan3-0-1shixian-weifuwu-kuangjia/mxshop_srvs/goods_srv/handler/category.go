@@ -4,54 +4,64 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"mxshop_srvs/goods_srv/model"
 
-	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"mxshop_srvs/goods_srv/global"
 	"mxshop_srvs/goods_srv/proto"
+
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-////商品分类
-func (s *GoodsServer) GetAllCategorysList(context.Context, *emptypb.Empty) (*proto.CategoryListResponse, error){
+// //商品分类
+func (s *GoodsServer) GetAllCategorysList(context.Context, *emptypb.Empty) (*proto.CategoryListResponse, error) {
 	/*
-	[
-		{
-			"id":xxx,
-			"name":"",
-			"level":1,
-			"is_tab":false,
-			"parent":13xxx,
-			"sub_category":[
+		希望返回如下这种结构给前端，拼装好这种结构我们选择在server层做，不交给web-服务层做，
+		因为这种结构用gorm来做是非常简单的，web-服务一般不与数据库交互，web层拿原始结构体拼接是很麻烦的
+		[
+			{
 				"id":xxx,
 				"name":"",
 				"level":1,
 				"is_tab":false,
-				"sub_category":[]
-			]
-		}
-	]
-	 */
+				"parent":13xxx,
+				"sub_category":[
+					"id":xxx,
+					"name":"",
+					"level":1,
+					"is_tab":false,
+					"sub_category":[]
+				]
+			}
+		]
+	*/
 	var categorys []model.Category
+	// 预加载关联的子分类字段
+	// 条件：只查 Level=1 的数据 → 也就是【一级分类】
+	// 这一行是核心！预加载（最关键）。Preload("SubCategory") → 加载二级分类，Preload("SubCategory.SubCategory") → 加载二级分类 + 三级分类
+
 	global.DB.Where(&model.Category{Level: 1}).Preload("SubCategory.SubCategory").Find(&categorys)
 	b, _ := json.Marshal(&categorys)
+	// 可以直接强转的：[] byte ↔ string
 	return &proto.CategoryListResponse{JsonData: string(b)}, nil
 }
-////获取子分类
+
+// //获取子分类
 func (s *GoodsServer) GetSubCategory(ctx context.Context, req *proto.CategoryListRequest) (*proto.SubCategoryListResponse, error) {
 	categoryListResponse := proto.SubCategoryListResponse{}
 
 	var category model.Category
-	if result := global.DB.First(&category, req.Id); result.RowsAffected == 0{
+	if result := global.DB.First(&category, req.Id); result.RowsAffected == 0 {
 		return nil, status.Errorf(codes.NotFound, "商品分类不存在")
 	}
 
 	categoryListResponse.Info = &proto.CategoryInfoResponse{
-		Id:       category.ID,
-		Name: category.Name,
-		Level: category.Level,
-		IsTab: category.IsTab,
+		Id:             category.ID,
+		Name:           category.Name,
+		Level:          category.Level,
+		IsTab:          category.IsTab,
 		ParentCategory: category.ParentCategoryID,
 	}
 
@@ -64,10 +74,10 @@ func (s *GoodsServer) GetSubCategory(ctx context.Context, req *proto.CategoryLis
 	global.DB.Where(&model.Category{ParentCategoryID: req.Id}).Find(&subCategorys)
 	for _, subCategory := range subCategorys {
 		subCategoryResponse = append(subCategoryResponse, &proto.CategoryInfoResponse{
-			Id: subCategory.ID,
-			Name: subCategory.Name,
-			Level: subCategory.Level,
-			IsTab: subCategory.IsTab,
+			Id:             subCategory.ID,
+			Name:           subCategory.Name,
+			Level:          subCategory.Level,
+			IsTab:          subCategory.IsTab,
 			ParentCategory: subCategory.ParentCategoryID,
 		})
 	}
@@ -87,7 +97,7 @@ func (s *GoodsServer) CreateCategory(ctx context.Context, req *proto.CategoryInf
 	}
 	tx := global.DB.Model(&model.Category{}).Create(cMap)
 	fmt.Println(tx)
-	return &proto.CategoryInfoResponse{Id:int32(category.ID)}, nil
+	return &proto.CategoryInfoResponse{Id: int32(category.ID)}, nil
 }
 
 func (s *GoodsServer) DeleteCategory(ctx context.Context, req *proto.DeleteCategoryRequest) (*emptypb.Empty, error) {

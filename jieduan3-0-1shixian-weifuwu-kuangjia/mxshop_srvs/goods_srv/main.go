@@ -8,17 +8,18 @@ import (
 	"os/signal"
 	"syscall"
 
+	uuid "github.com/satori/go.uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"github.com/satori/go.uuid"
 
+	"mxshop_srvs/goods_srv/global"
 	"mxshop_srvs/goods_srv/handler"
 	"mxshop_srvs/goods_srv/initialize"
 	"mxshop_srvs/goods_srv/proto"
-	"mxshop_srvs/goods_srv/global"
 	"mxshop_srvs/goods_srv/utils"
+
 	"github.com/hashicorp/consul/api"
 )
 
@@ -35,13 +36,14 @@ func main() {
 
 	flag.Parse()
 	zap.S().Info("ip: ", *IP)
-	if *Port == 0{
+	if *Port == 0 {
 		*Port, _ = utils.GetFreePort()
 	}
 
 	zap.S().Info("port: ", *Port)
 
 	server := grpc.NewServer()
+	// 创建proto的grpc服务
 	proto.RegisterGoodsServer(server, &handler.GoodsServer{})
 	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *IP, *Port))
 	if err != nil {
@@ -94,7 +96,7 @@ func main() {
 	quit := make(chan os.Signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	if err = client.Agent().ServiceDeregister(serviceID); err != nil{
+	if err = client.Agent().ServiceDeregister(serviceID); err != nil {
 		zap.S().Info("注销失败")
 	}
 	zap.S().Info("注销成功")

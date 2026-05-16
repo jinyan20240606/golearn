@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/olivere/elastic/v7"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -16,28 +17,29 @@ import (
 )
 
 type GoodsServer struct {
+	// 只用于快速测试接口的连通性，可以用这个自动生成的UnimplementedGoodsServer结构体
 	proto.UnimplementedGoodsServer
 }
 
 func ModelToResponse(goods model.Goods) proto.GoodsInfoResponse {
-	return proto.GoodsInfoResponse {
-		Id:       goods.ID,
-		CategoryId: goods.CategoryID,
-		Name: goods.Name,
-		GoodsSn: goods.GoodsSn,
-		ClickNum: goods.ClickNum,
-		SoldNum: goods.SoldNum,
-		FavNum: goods.FavNum,
-		MarketPrice: goods.MarketPrice,
-		ShopPrice: goods.ShopPrice,
-		GoodsBrief: goods.GoodsBrief,
-		ShipFree: goods.ShipFree,
+	return proto.GoodsInfoResponse{
+		Id:              goods.ID,
+		CategoryId:      goods.CategoryID,
+		Name:            goods.Name,
+		GoodsSn:         goods.GoodsSn,
+		ClickNum:        goods.ClickNum,
+		SoldNum:         goods.SoldNum,
+		FavNum:          goods.FavNum,
+		MarketPrice:     goods.MarketPrice,
+		ShopPrice:       goods.ShopPrice,
+		GoodsBrief:      goods.GoodsBrief,
+		ShipFree:        goods.ShipFree,
 		GoodsFrontImage: goods.GoodsFrontImage,
-		IsNew: goods.IsNew,
-		IsHot: goods.IsHot,
-		OnSale: goods.OnSale,
-		DescImages: goods.DescImages,
-		Images: goods.Images,
+		IsNew:           goods.IsNew,
+		IsHot:           goods.IsHot,
+		OnSale:          goods.OnSale,
+		DescImages:      goods.DescImages,
+		Images:          goods.Images,
 		Category: &proto.CategoryBriefInfoResponse{
 			Id:   goods.Category.ID,
 			Name: goods.Category.Name,
@@ -49,7 +51,6 @@ func ModelToResponse(goods model.Goods) proto.GoodsInfoResponse {
 		},
 	}
 }
-
 
 func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterRequest) (*proto.GoodsListResponse, error) {
 	//使用es的目的是搜索出商品的id来，通过id拿到具体的字段信息是通过mysql来完成
@@ -97,9 +98,9 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 
 		if category.Level == 1 {
 			subQuery = fmt.Sprintf("select id from category where parent_category_id in (select id from category WHERE parent_category_id=%d)", req.TopCategory)
-		}else if category.Level == 2 {
+		} else if category.Level == 2 {
 			subQuery = fmt.Sprintf("select id from category WHERE parent_category_id=%d", req.TopCategory)
-		}else if category.Level == 3 {
+		} else if category.Level == 3 {
 			subQuery = fmt.Sprintf("select id from category WHERE id=%d", req.TopCategory)
 		}
 
@@ -132,7 +133,7 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 		return nil, err
 	}
 
- 	goodsIds := make([]int32, 0)
+	goodsIds := make([]int32, 0)
 	goodsListResponse.Total = int32(result.Hits.TotalHits.Value)
 	for _, value := range result.Hits.Hits {
 		goods := model.EsGoods{}
@@ -155,8 +156,8 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 	return goodsListResponse, nil
 }
 
-//现在用户提交订单有多个商品，你得批量查询商品的信息吧
-func (s *GoodsServer) BatchGetGoods(ctx context.Context, req *proto.BatchGoodsIdInfo) (*proto.GoodsListResponse, error){
+// 现在用户提交订单有多个商品，你得批量查询商品的信息吧
+func (s *GoodsServer) BatchGetGoods(ctx context.Context, req *proto.BatchGoodsIdInfo) (*proto.GoodsListResponse, error) {
 	goodsListResponse := &proto.GoodsListResponse{}
 	var goods []model.Goods
 
@@ -169,7 +170,7 @@ func (s *GoodsServer) BatchGetGoods(ctx context.Context, req *proto.BatchGoodsId
 	goodsListResponse.Total = int32(result.RowsAffected)
 	return goodsListResponse, nil
 }
-func (s *GoodsServer) GetGoodsDetail(ctx context.Context, req *proto.GoodInfoRequest) (*proto.GoodsInfoResponse, error){
+func (s *GoodsServer) GetGoodsDetail(ctx context.Context, req *proto.GoodInfoRequest) (*proto.GoodsInfoResponse, error) {
 	var goods model.Goods
 
 	if result := global.DB.Preload("Category").Preload("Brands").First(&goods, req.Id); result.RowsAffected == 0 {
@@ -193,22 +194,22 @@ func (s *GoodsServer) CreateGoods(ctx context.Context, req *proto.CreateGoodsInf
 	//防止同一个token的数据重复插入到数据库中，如果redis中没有这个token则放入redis
 	//这里没有看到图片文件是如何上传， 在微服务中 普通的文件上传已经不再使用
 	goods := model.Goods{
-		Brands: brand,
-		BrandsID: brand.ID,
-		Category: category,
-		CategoryID: category.ID,
-		Name: req.Name,
-		GoodsSn: req.GoodsSn,
-		MarketPrice: req.MarketPrice,
-		ShopPrice: req.ShopPrice,
-		GoodsBrief: req.GoodsBrief,
-		ShipFree: req.ShipFree,
-		Images: req.Images,
-		DescImages: req.DescImages,
+		Brands:          brand,
+		BrandsID:        brand.ID,
+		Category:        category,
+		CategoryID:      category.ID,
+		Name:            req.Name,
+		GoodsSn:         req.GoodsSn,
+		MarketPrice:     req.MarketPrice,
+		ShopPrice:       req.ShopPrice,
+		GoodsBrief:      req.GoodsBrief,
+		ShipFree:        req.ShipFree,
+		Images:          req.Images,
+		DescImages:      req.DescImages,
 		GoodsFrontImage: req.GoodsFrontImage,
-		IsNew: req.IsNew,
-		IsHot: req.IsHot,
-		OnSale: req.OnSale,
+		IsNew:           req.IsNew,
+		IsHot:           req.IsHot,
+		OnSale:          req.OnSale,
 	}
 
 	//srv之间互相调用了
@@ -220,18 +221,18 @@ func (s *GoodsServer) CreateGoods(ctx context.Context, req *proto.CreateGoodsInf
 	}
 	tx.Commit()
 	return &proto.GoodsInfoResponse{
-		Id:  goods.ID,
+		Id: goods.ID,
 	}, nil
 }
 
 func (s *GoodsServer) DeleteGoods(ctx context.Context, req *proto.DeleteGoodsInfo) (*emptypb.Empty, error) {
-	if result := global.DB.Delete(&model.Goods{BaseModel:model.BaseModel{ID:req.Id}}, req.Id); result.Error != nil {
+	if result := global.DB.Delete(&model.Goods{BaseModel: model.BaseModel{ID: req.Id}}, req.Id); result.Error != nil {
 		return nil, status.Errorf(codes.NotFound, "商品不存在")
 	}
 	return &emptypb.Empty{}, nil
 }
 
-func (s *GoodsServer) UpdateGoods(ctx context.Context, req *proto.CreateGoodsInfo) (*emptypb.Empty, error){
+func (s *GoodsServer) UpdateGoods(ctx context.Context, req *proto.CreateGoodsInfo) (*emptypb.Empty, error) {
 	var goods model.Goods
 
 	if result := global.DB.First(&goods, req.Id); result.RowsAffected == 0 {
@@ -254,16 +255,16 @@ func (s *GoodsServer) UpdateGoods(ctx context.Context, req *proto.CreateGoodsInf
 	goods.CategoryID = category.ID
 	goods.Name = req.Name
 	goods.GoodsSn = req.GoodsSn
-	goods.MarketPrice= req.MarketPrice
-	goods.ShopPrice= req.ShopPrice
-	goods.GoodsBrief= req.GoodsBrief
-	goods.ShipFree= req.ShipFree
-	goods.Images= req.Images
-	goods.DescImages= req.DescImages
-	goods.GoodsFrontImage= req.GoodsFrontImage
-	goods.IsNew= req.IsNew
-	goods.IsHot= req.IsHot
-	goods.OnSale= req.OnSale
+	goods.MarketPrice = req.MarketPrice
+	goods.ShopPrice = req.ShopPrice
+	goods.GoodsBrief = req.GoodsBrief
+	goods.ShipFree = req.ShipFree
+	goods.Images = req.Images
+	goods.DescImages = req.DescImages
+	goods.GoodsFrontImage = req.GoodsFrontImage
+	goods.IsNew = req.IsNew
+	goods.IsHot = req.IsHot
+	goods.OnSale = req.OnSale
 
 	tx := global.DB.Begin()
 	result := tx.Save(&goods)
@@ -274,5 +275,3 @@ func (s *GoodsServer) UpdateGoods(ctx context.Context, req *proto.CreateGoodsInf
 	tx.Commit()
 	return &emptypb.Empty{}, nil
 }
-
-

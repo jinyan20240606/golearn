@@ -73,7 +73,9 @@ message CategoryInfoResponse {
 
 message CategoryListResponse {
     int32 total = 1;
+    // 切片类型
     repeated CategoryInfoResponse data = 2;
+    // 定义这个字段，方便后续直接返回 前端可用的多级分类JSON字符串
     string jsonData = 3;
 }
 

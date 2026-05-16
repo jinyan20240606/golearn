@@ -27,7 +27,13 @@
 
 ### 常用遗忘方法
 1. strings.SplitN(字符串, 分隔符, 切成几段)
-2. time方法
+2. json序列化和反序列化方法
+   1. `// 序列化：必须1个参数（只给数据）`
+   2. `b, _ := json.Marshal(&categorys)`
+   3. `// 反序列化：必须2个参数（给JSON + 给空切片）`
+   4. `var data []model.Category`
+   5. `json.Unmarshal(b, &data)`
+3. time方法
    1. `time.Unix(int64(value.BirthDay), 0)`
       1. func Unix(sec int64, nsec int64) Time
       2. 作用： 把秒级时间戳 + 纳秒，转成 Go 的 time.Time 对象
@@ -38,7 +44,7 @@
    4. time.Now().UnixMilli() ：获取当前毫秒级时间戳，返回值：int64
    5. time.Now().UnixNano() ：获取当前纳秒级时间戳，返回值：int64
    6. time.Time：它是一个对象 / 结构体，里面存了：年、月、日、时、分、秒、纳秒、时区……，所有时间操作都靠它
-3. Go JSON库的标签常见语法
+4. Go JSON库的标签常见语法
    1. 
    ```go
    type LoginForm struct {
