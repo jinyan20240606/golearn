@@ -63,9 +63,14 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 	goodsListResponse := &proto.GoodsListResponse{}
 
 	//match bool 复合查询
+	// 创建 ES 的布尔查询（bool 查询）
 	q := elastic.NewBoolQuery()
 	localDB := global.DB.Model(model.Goods{})
 	if req.KeyWords != "" {
+		// 用 GORM 做普通数据库查询
+		// 用 ElasticSearch 做关键词全文搜索（搜商品名称、简介）
+		// 不使用where("name like ?") 语法， 不使用 MySQL 的 LIKE 模糊查询，改用 ES 全文检索
+		// 下面等价于WHERE name LIKE '%手机%' OR goods_brief LIKE '%手机%'
 		q = q.Must(elastic.NewMultiMatchQuery(req.KeyWords, "name", "goods_brief"))
 	}
 	if req.IsHot {
@@ -160,8 +165,9 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 func (s *GoodsServer) BatchGetGoods(ctx context.Context, req *proto.BatchGoodsIdInfo) (*proto.GoodsListResponse, error) {
 	goodsListResponse := &proto.GoodsListResponse{}
 	var goods []model.Goods
-
 	//调用where并不会真正执行sql 只是用来生成sql的 当调用find， first才会去执行sql，
+
+	// req.Id = []int32{1,2,3} 是切片类型，where支持对主键的切片和多参where(1,2,3) 这种方式自动解析，非主键字段切片，需要手动写Where("id IN ?", req.Id)
 	result := global.DB.Where(req.Id).Find(&goods)
 	for _, good := range goods {
 		goodsInfoResponse := ModelToResponse(good)
@@ -192,7 +198,8 @@ func (s *GoodsServer) CreateGoods(ctx context.Context, req *proto.CreateGoodsInf
 	}
 	//先检查redis中是否有这个token
 	//防止同一个token的数据重复插入到数据库中，如果redis中没有这个token则放入redis
-	//这里没有看到图片文件是如何上传， 在微服务中 普通的文件上传已经不再使用
+
+	//这里没有看到图片文件是如何上传， 在微服务中 普通的文件上传已经不再使用---需要第三方文件上传服务，专门解决文件上传的问题
 	goods := model.Goods{
 		Brands:          brand,
 		BrandsID:        brand.ID,
@@ -205,7 +212,7 @@ func (s *GoodsServer) CreateGoods(ctx context.Context, req *proto.CreateGoodsInf
 		GoodsBrief:      req.GoodsBrief,
 		ShipFree:        req.ShipFree,
 		Images:          req.Images,
-		DescImages:      req.DescImages,
+		DescImages:      req.DescImages, // 这块拿到的其实上传后的文件url参数
 		GoodsFrontImage: req.GoodsFrontImage,
 		IsNew:           req.IsNew,
 		IsHot:           req.IsHot,

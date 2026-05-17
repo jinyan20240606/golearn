@@ -52,11 +52,12 @@ func (s *GoodsServer) GetAllCategorysList(context.Context, *emptypb.Empty) (*pro
 func (s *GoodsServer) GetSubCategory(ctx context.Context, req *proto.CategoryListRequest) (*proto.SubCategoryListResponse, error) {
 	categoryListResponse := proto.SubCategoryListResponse{}
 
+	// 先查该商品分类是否存在
 	var category model.Category
 	if result := global.DB.First(&category, req.Id); result.RowsAffected == 0 {
 		return nil, status.Errorf(codes.NotFound, "商品分类不存在")
 	}
-
+	// 然后再查询子分类
 	categoryListResponse.Info = &proto.CategoryInfoResponse{
 		Id:             category.ID,
 		Name:           category.Name,
