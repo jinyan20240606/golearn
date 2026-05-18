@@ -14,7 +14,7 @@
 
 需要分析下需求和前端界面，分析下有哪些数据实体需要纳入到商品微服务中来
 
-商品服务这块大概需要有5张表
+通过需求分析商品服务这块大概需要有5张表
 
 ![alt text](image.png)
 1. 轮博图管理实体表
@@ -23,6 +23,39 @@
 4. 品牌表  - log图片和名称
 5. 商品分类和品牌关系中间表  -- category_brand_relation表
    1. 品牌也有可能属于多个分类，多对多关系
+
+#### 表结构对应的数据库表数据示例
+
+> 根据jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/model表文件实际对应的数据库示例
+```go
+// 1、categories 商品分类表（自关联三级分类）
+id	created_at	updated_at	deleted_at	name	parent_category_id	level	is_tab
+1	2025-01-01	2025-01-01	NULL	手机	0	1	1
+2	2025-01-01	2025-01-01	NULL	安卓	1	2	0
+3	2025-01-01	2025-01-01	NULL	小米	2	3	0
+
+// 2、brands 商品品牌表
+id	name	logo
+1	小米	https://xxx.png
+2	华为	https://xxx.png
+
+// 3、goodscategorybrand 分类 <-> 品牌 中间表（多对多）一个分类可以绑定多个品牌，一个品牌可以属于多个分类
+id	category_id	brands_id
+1	1	1
+2	1	2
+3	2	1
+
+// 4、goods 商品表
+id	name	category_id	brands_id	shop_price	goods_brief	on_sale	ship_free
+1	小米 14	3	1	3999	最新小米旗舰	1	1
+2	华为 Mate70	2	2	4999	华为旗舰	1	1
+
+// 5、banners 轮博图表
+id	created_at	updated_at	deleted_at	image	url	index
+1	2026-05-18 10:00:00	2026-05-18 10:00:00	NULL	https://img1.jpg	/goods/1001	1
+2	2026-05-18 10:05:00	2026-05-18 10:05:00	NULL	https://img2.jpg	/category/1	2
+3	2026-05-18 10:10:00	2026-05-18 10:10:00	NULL	https://img3.jpg	/activity/sale	3
+```
 
 ### 1-2 需求分析- 商品微服务接口分析
 
@@ -50,6 +83,9 @@
    1. 列表 
    2. 后台系统的分类增删改查
    3. 通过分类查找品牌
+
+- 接口注意事项
+  - 一旦设计修改数据库都需要必须加上权限校验，查询类的可选鉴权
 
 ### 1-3 商品多级分类表结构设计及细节注意
 - 设计多级分类表：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/model/goods.go`的Category表结构体定义
@@ -175,6 +211,124 @@
 
 ## 12周 商品微服务的gin层和oss图片上传
 
+### 1章 gin完成商品服务的http接口
+> 主要完成 `jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web`目录，完成与goods_srv的联调
+
+#### 1-1 快速将用户的web服务复刻出商品的web服务
+**重点注意**：
+1. 迁移中间件时涉及鉴权功能，这个可能每个服务可能都需要统一的这种代码逻辑 ---- 涉及公共代码的优缺点
+##### 公共代码的优缺点
+   1. 优点：抽离出来，各个微服务公用，是有好处的，抽离，减少代码量 
+   2. 缺点：公共的代码作为多个微服务公用的话，有一个很大的缺点，一旦修改可能会影响其他服务，而且不知道当时有哪些服务在用，不知道影响面，一旦有问题，其他微服务都会受到影响
+   3. 解决：公共的代码给大家统一使用，必须要加版本管理，方便风险控制
+
+### 1-2&3 商品列表页接口1&2
+
+- `jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/api/goods/goods.go` 的List方法
+
+web服务层的接口都是跟业务强相关的，
+
+### 1-4 如何设计一个符合go风格的注册中心接口？
+
+- 我们需要把我们的商品web服务注册到注册中心去，如consul去，但是我们必须统一封装一个适配器，解耦和扩展性，支持扩展后面能随时切换注册中心平台
+- 我们建立`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/utils/register` 单独的注册中心模块，可以方便扩展
+- 这节课重点：不是把商品gin层项目接入注册中心，而是设计一个通用扩展性高的集成注册中心功能
+- 然后在`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/main.go` 引入（集成注册中心模块）使用它注册到consule中
+
+### 1-5 gin的退出后的服务注销
+
+- 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/main.go`
+- 1. 优雅的退出功能，一定要先把这个Router服务启动放到协程里
+- 2. 在系统退出信号中--然后调用前面封装的统一注册中心接口暴露的注销方法register_client.DeRegister
+### 1-6 用户的web服务注册和优雅退出
+
+- 给user-web服务也封装统一注册集成接口，添加注册功能和退出注销功能
+
+- 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/user-web/main.go`
+
+
+### 1-7 新建商品
+
+- 完成`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/router/goods.go` 的 `goods.New` 相关路由的实现
+  - 以及`api/goods/goods.go 的 func New(ctx *gin.Context) 方法`
+  - 重点关注
+    - 但凡这种post，put改数据库类的请求，在微服务中都是比较重要关注的，稍复杂，因为设计跨微服务的数据库交互，必须要考虑的如最重要的分布式事务问题。。。
+    - 如何设置库存 --- 这块是重点后面单独讲，TODO 商品的库存 - 分布式事务
+
+### 1-8 获取商品详情
+
+- 完成`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/router/goods.go`的`GoodsRouter.GET("/:id", goods.Detail) //获取商品的详情`handler逻辑
+  - handelr中的Detail方法
+- 重点细节
+  - 只有需要在 gRPC 服务端里拿到 Gin 上下文信息时，才用 WithValue
+    - 如 grpc服务端中想获取请求头 token，用户id什么的
+      - ginCtx := ctx.Value("ginContext").(*gin.Context)
+      - userId := ginCtx.GetInt("userId")
+    - 那么webgin层，调用时一定要
+      - rsp, err := goodsClient.GetGoodsDetail(
+        - context.WithValue(context.Background(), "ginContext", ctx), // 把 gin ctx 塞进去
+        - &proto.GoodInfoRequest{Id: int32(i)},
+      - )
+  - 普通接口、不需要传递信息时，直接用grpc的上下文即可： context.Background ()*
+
+### 1-9 商品删除更新
+
+- 完成路由处理方法：`GoodsRouter.DELETE("/:id",middlewares.JWTAuth(), middlewares.IsAdminAuth(), goods.Delete) //删除商品`
+- 再增加一个获取商品库存的接口`GoodsRouter.GET("/:id/stocks", goods.Stocks)   `
+  - 目的：此时主要是在gin层留出一个口子，后续在goods_srv中实现苦寻接口
+- 完善一个更新路由接口`GoodsRouter.PATCH("/:id", middlewares.JWTAuth(), middlewares.IsAdminAuth(), goods.UpdateStatus)`
+  - 更新部分状态，接口-- 部分更新用PATCH方法
+  - 使用抽离form表单类型：`forms/goods.go`
+- 完善`GoodsRouter.PUT("/:id", middlewares.JWTAuth(), middlewares.IsAdminAuth(), goods.Update)         // 全量更新用PUT方法`
+  - 使用抽离的form表单类型：`forms/goods.go`
+
+### 1-10 商品的分类接口
+
+- 分类接口单独拆分文件模块，与商品本身的增删改查不能混在一起
+
+- 新建分类路由接口`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/router/category.go`
+- **重点注意的**
+  - 新建分类时需要新建个form表单类型`forms/category.go`，from里的bool类型必须用指针类型，原因如下：
+    - bool 零值 = false，即使前端根本没传这个字段，Gin 也会认为它的值是 false，用户不传 is_tab → 系统以为是 false → 验证通过，验证器没有拦住
+    - 用 *bool 指针就完美解决 IsTab *bool `binding:"required"`
+      - 因为指针的零值 = nil（空）
+  - api下goods和category文件存在公共帮助代码重复使用，可以抽离到api/base.go文件自定义api包名下，直接api包名引用
+
+### 1-11 轮博图接口和yapi的快速测试
+
+1. `jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/router/banner.go`
+2. 建个banner的form类型：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/forms/banner.go`
+3. 新建`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/api/banners/banner.go`
+
+### 1-12 品牌列表页接口
+
+- 完成`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/router/brand.go`
+  - 品牌列表的CRUD接口
+### 1-13 品牌分类CRUD接口
+
+- 接着完成`goods-web/router/brand.go`品牌分类接口
+
+**例如**
+分类1：手机 → 绑定品牌：华为、小米
+分类2：电脑 → 绑定品牌：联想、苹果
+1 GetCategoryBrandList(ctx *gin.Context)。---- /rpc/category/1/brands接收分类id
+[
+  { "id": 1, "name": "华为", "logo": "xxx" },
+  { "id": 2, "name": "小米", "logo": "xxx" }
+]
+
+2 CategoryBrandList(ctx *gin.Context) --- /rpc/category/brands// 调用时不用传参
+{
+  "total": 4,
+  "data": [
+    { "category": {id:1,name:"手机"}, "brand": {id:1,name:"华为"} },
+    { "category": {id:1,name:"手机"}, "brand": {id:2,name:"小米"} },
+    { "category": {id:2,name:"电脑"}, "brand": {id:3,name:"联想"} },
+    { "category": {id:2,name:"电脑"}, "brand": {id:4,name:"苹果"} }
+  ]
+}
+
+### 2章 阿里云的oss服务集成
 
 
 ## 13周 库存服务和分布式锁

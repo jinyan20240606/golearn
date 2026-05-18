@@ -15,6 +15,7 @@ import (
 func (s *GoodsServer) BrandList(ctx context.Context, req *proto.BrandFilterRequest) (*proto.BrandListResponse, error) {
 	brandListResponse := proto.BrandListResponse{}
 
+	// 拿到前端过来的分页数据
 	var brands []model.Brands
 	result := global.DB.Scopes(Paginate(int(req.Pages), int(req.PagePerNums))).Find(&brands)
 	if result.Error != nil {

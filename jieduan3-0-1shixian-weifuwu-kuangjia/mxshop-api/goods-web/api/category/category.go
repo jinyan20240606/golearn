@@ -10,12 +10,12 @@ import (
 	empty "github.com/golang/protobuf/ptypes/empty"
 	"go.uber.org/zap"
 
+	// api大模块下的公共方法引入
 	"mxshop-api/goods-web/api"
 	"mxshop-api/goods-web/forms"
 	"mxshop-api/goods-web/global"
 	"mxshop-api/goods-web/proto"
 )
-
 
 func List(ctx *gin.Context) {
 	r, err := global.GoodsSrvClient.GetAllCategorysList(context.Background(), &empty.Empty{})
@@ -45,18 +45,18 @@ func Detail(ctx *gin.Context) {
 	subCategorys := make([]interface{}, 0)
 	if r, err := global.GoodsSrvClient.GetSubCategory(context.Background(), &proto.CategoryListRequest{
 		Id: int32(i),
-	});err != nil {
+	}); err != nil {
 		api.HandleGrpcErrorToHttp(err, ctx)
 		return
-	}else{
+	} else {
 		//写文档 特别是数据多的时候很慢， 先开发后写文档
-		for _, value := range r.SubCategorys{
+		for _, value := range r.SubCategorys {
 			subCategorys = append(subCategorys, map[string]interface{}{
-				"id": value.Id,
-				"name": value.Name,
-				"level": value.Level,
+				"id":              value.Id,
+				"name":            value.Name,
+				"level":           value.Level,
 				"parent_category": value.ParentCategory,
-				"is_tab": value.IsTab,
+				"is_tab":          value.IsTab,
 			})
 		}
 		reMap["id"] = r.Info.Id
@@ -79,9 +79,9 @@ func New(ctx *gin.Context) {
 	}
 
 	rsp, err := global.GoodsSrvClient.CreateCategory(context.Background(), &proto.CategoryInfoRequest{
-		Name:                 categoryForm.Name,
-		IsTab:                *categoryForm.IsTab,
-		Level: categoryForm.Level,
+		Name:           categoryForm.Name,
+		IsTab:          *categoryForm.IsTab,
+		Level:          categoryForm.Level,
 		ParentCategory: categoryForm.ParentCategory,
 	})
 	if err != nil {
@@ -109,7 +109,7 @@ func Delete(ctx *gin.Context) {
 
 	//1. 先查询出该分类写的所有子分类
 	//2. 将所有的分类全部逻辑删除
-	//3. 将该分类下的所有的商品逻辑删除
+	//3. 将该分类下的所有的商品逻辑删除--- 商品关联的数据太多了，
 	_, err = global.GoodsSrvClient.DeleteCategory(context.Background(), &proto.DeleteCategoryRequest{Id: int32(i)})
 	if err != nil {
 		api.HandleGrpcErrorToHttp(err, ctx)
@@ -125,8 +125,9 @@ func Update(ctx *gin.Context) {
 		api.HandleValidatorError(ctx, err)
 		return
 	}
-
+	// 获取 URL 中的分类 ID
 	id := ctx.Param("id")
+	// 字符串 ID 转成 int 数字
 	i, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
@@ -134,7 +135,7 @@ func Update(ctx *gin.Context) {
 	}
 
 	request := &proto.CategoryInfoRequest{
-		Id: int32(i),
+		Id:   int32(i),
 		Name: categoryForm.Name,
 	}
 	if categoryForm.IsTab != nil {

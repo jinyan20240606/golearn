@@ -101,6 +101,27 @@ func (s *GoodsServer) CreateCategory(ctx context.Context, req *proto.CategoryInf
 	return &proto.CategoryInfoResponse{Id: int32(category.ID)}, nil
 }
 
+/*
+*
+真正完整逻辑：
+查出该分类的所有子分类（递归 / 循环）
+删除所有子分类
+删除该分类下的所有商品
+最后删除自己
+
+目前实现是简版
+
+正确的级联删除应该做到：例如1级：手机 (id: 1)
+
+	└── 2级：安卓手机 (id: 2, 父id:1)
+	     └── 3级：小米手机 (id: 3, 父id:2)
+
+----
+删除 id=1 时，必须自动删除：
+安卓手机（id=2）
+小米手机（id=3）
+该分类下所有商品
+*/
 func (s *GoodsServer) DeleteCategory(ctx context.Context, req *proto.DeleteCategoryRequest) (*emptypb.Empty, error) {
 	if result := global.DB.Delete(&model.Category{}, req.Id); result.RowsAffected == 0 {
 		return nil, status.Errorf(codes.NotFound, "商品分类不存在")

@@ -55,6 +55,20 @@
    // omitempty：字段为空时，不返回给前端
    // -：忽略这个字段，不序列化、不返回
    ```
+
+
+#### 字符串相关方法
+
+1. strconv方法
+   1. strconv.ParseInt(id, 10, 64) // 把字符串 → 转成 int64 类型，2参是进制，3参是目标位数
+   2. strconv.Itoa(123) // 返回 "123"
+   3. strconv.Atoi("123") // 返回 int, error
+   4. strconv.ParseInt("123", 10, 32)
+   5. strconv.ParseFloat("3.14", 64)
+
+
+
+
 ### 在课程中提到的docker技巧
 
 1. 服务器重启，自动启动容器`docker run -d --name nginx -p 80:80 --restart=always nginx`

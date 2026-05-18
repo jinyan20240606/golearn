@@ -1,8 +1,14 @@
 package goods
 
 import (
-	"fmt"
 	"context"
+	"fmt"
+	"mxshop-api/goods-web/forms"
+	"mxshop-api/goods-web/proto"
+	"net/http"
+	"strconv"
+	"strings"
+
 	sentinel "github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/base"
 	"github.com/gin-gonic/gin"
@@ -10,16 +16,11 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"mxshop-api/goods-web/forms"
-	"mxshop-api/goods-web/proto"
-	"net/http"
-	"strconv"
-	"strings"
 
 	"mxshop-api/goods-web/global"
 )
 
-func removeTopStruct(fileds map[string]string) map[string]string{
+func removeTopStruct(fileds map[string]string) map[string]string {
 	rsp := map[string]string{}
 	for field, err := range fileds {
 		rsp[field[strings.Index(field, ".")+1:]] = err
@@ -58,11 +59,11 @@ func HandleGrpcErrorToHttp(err error, c *gin.Context) {
 	}
 }
 
-func HandleValidatorError(c *gin.Context, err error){
+func HandleValidatorError(c *gin.Context, err error) {
 	errs, ok := err.(validator.ValidationErrors)
 	if !ok {
 		c.JSON(http.StatusOK, gin.H{
-			"msg":err.Error(),
+			"msg": err.Error(),
 		})
 	}
 	c.JSON(http.StatusBadRequest, gin.H{
@@ -71,13 +72,14 @@ func HandleValidatorError(c *gin.Context, err error){
 	return
 }
 
-func List(ctx *gin.Context){
+func List(ctx *gin.Context) {
 	fmt.Println("商品列表")
+	// 1、从url获取GET的参数
 	//商品的列表 pmin=abc, spring cloud, go-micro
 	request := &proto.GoodsFilterRequest{}
 
-	priceMin := ctx.DefaultQuery("pmin", "0")
-	priceMinInt, _ := strconv.Atoi(priceMin)
+	priceMin := ctx.DefaultQuery("pmin", "0") // 加默认值
+	priceMinInt, _ := strconv.Atoi(priceMin)  // 忽略这个错误
 	request.PriceMin = int32(priceMinInt)
 
 	priceMax := ctx.DefaultQuery("pmax", "0")
@@ -85,16 +87,16 @@ func List(ctx *gin.Context){
 	request.PriceMax = int32(priceMaxInt)
 
 	isHot := ctx.DefaultQuery("ih", "0")
-	if isHot == "1"{
+	if isHot == "1" {
 		request.IsHot = true
 	}
 	isNew := ctx.DefaultQuery("in", "0")
-	if isNew == "1"{
+	if isNew == "1" {
 		request.IsNew = true
 	}
 
 	isTab := ctx.DefaultQuery("it", "0")
-	if isTab == "1"{
+	if isTab == "1" {
 		request.IsTab = true
 	}
 
@@ -124,7 +126,7 @@ func List(ctx *gin.Context){
 	e, b := sentinel.Entry("goods-list", sentinel.WithTrafficType(base.Inbound))
 	if b != nil {
 		ctx.JSON(http.StatusTooManyRequests, gin.H{
-			"msg":"请求过于频繁，请稍后重试",
+			"msg": "请求过于频繁，请稍后重试",
 		})
 		return
 	}
@@ -137,12 +139,14 @@ func List(ctx *gin.Context){
 	e.Exit()
 	reMap := map[string]interface{}{
 		"total": r.Total,
+		// "goods_list": r.Data, 不要这样直接将grpc内部服务的结果返回，转成更适合前端的业务字段格式如字段名转成蛇形命名
 	}
 
+	// 必须要手动转化grpc服务的字段创建map添加到reMap的Data字段--- 转成更适合前端的业务字段格式
 	goodsList := make([]interface{}, 0)
 	for _, value := range r.Data {
 		goodsList = append(goodsList, map[string]interface{}{
-			"id": value.Id,
+			"id":          value.Id,
 			"name":        value.Name,
 			"goods_brief": value.GoodsBrief,
 			"desc":        value.GoodsDesc,
@@ -170,7 +174,8 @@ func List(ctx *gin.Context){
 	ctx.JSON(http.StatusOK, reMap)
 }
 
-func New(ctx *gin.Context)  {
+// 新建商品的接口实现
+func New(ctx *gin.Context) {
 	goodsForm := forms.GoodsForm{}
 	if err := ctx.ShouldBindJSON(&goodsForm); err != nil {
 		HandleValidatorError(ctx, err)
@@ -196,19 +201,21 @@ func New(ctx *gin.Context)  {
 		return
 	}
 
-	//如何设置库存
+	//如何设置库存 --- 这块是重点后面单独讲
 	//TODO 商品的库存 - 分布式事务
 	ctx.JSON(http.StatusOK, rsp)
 }
 
-func Detail(ctx *gin.Context)  {
+func Detail(ctx *gin.Context) {
 	id := ctx.Param("id")
 	i, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return
 	}
-
+	// 因为这个接口在 gRPC 服务端里要用到 Gin 的上下文信息！
+	// 铁律1：只有需要在 gRPC 服务端里拿到 Gin 上下文信息时，才用 WithValue
+	// // // --- 普通接口、不需要传递信息时，直接用 context.Background ()**
 	r, err := global.GoodsSrvClient.GetGoodsDetail(context.WithValue(context.Background(), "ginContext", ctx), &proto.GoodInfoRequest{
 		Id: int32(i),
 	})
@@ -243,7 +250,7 @@ func Detail(ctx *gin.Context)  {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
-func Delete(ctx *gin.Context)  {
+func Delete(ctx *gin.Context) {
 	id := ctx.Param("id")
 	i, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
@@ -260,7 +267,8 @@ func Delete(ctx *gin.Context)  {
 	return
 }
 
-func Stocks(ctx *gin.Context)  {
+// 获取商品库存
+func Stocks(ctx *gin.Context) {
 	id := ctx.Param("id")
 	_, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
@@ -272,7 +280,8 @@ func Stocks(ctx *gin.Context)  {
 	return
 }
 
-func UpdateStatus(ctx *gin.Context)  {
+// 部分更新商品状态
+func UpdateStatus(ctx *gin.Context) {
 	goodsStatusForm := forms.GoodsStatusForm{}
 	if err := ctx.ShouldBindJSON(&goodsStatusForm); err != nil {
 		HandleValidatorError(ctx, err)
@@ -282,11 +291,11 @@ func UpdateStatus(ctx *gin.Context)  {
 	id := ctx.Param("id")
 	i, err := strconv.ParseInt(id, 10, 32)
 	if _, err = global.GoodsSrvClient.UpdateGoods(context.Background(), &proto.CreateGoodsInfo{
-		Id: int32(i),
-		IsHot: *goodsStatusForm.IsHot,
-		IsNew: *goodsStatusForm.IsNew,
+		Id:     int32(i),
+		IsHot:  *goodsStatusForm.IsHot,
+		IsNew:  *goodsStatusForm.IsNew,
 		OnSale: *goodsStatusForm.OnSale,
-	});err != nil {
+	}); err != nil {
 		HandleGrpcErrorToHttp(err, ctx)
 		return
 	}
@@ -295,7 +304,8 @@ func UpdateStatus(ctx *gin.Context)  {
 	})
 }
 
-func Update(ctx *gin.Context){
+// 全量更新
+func Update(ctx *gin.Context) {
 	goodsForm := forms.GoodsForm{}
 	if err := ctx.ShouldBindJSON(&goodsForm); err != nil {
 		HandleValidatorError(ctx, err)
@@ -305,7 +315,7 @@ func Update(ctx *gin.Context){
 	id := ctx.Param("id")
 	i, err := strconv.ParseInt(id, 10, 32)
 	if _, err = global.GoodsSrvClient.UpdateGoods(context.Background(), &proto.CreateGoodsInfo{
-		Id: int32(i),
+		Id:              int32(i),
 		Name:            goodsForm.Name,
 		GoodsSn:         goodsForm.GoodsSn,
 		Stocks:          goodsForm.Stocks,
@@ -318,7 +328,7 @@ func Update(ctx *gin.Context){
 		GoodsFrontImage: goodsForm.FrontImage,
 		CategoryId:      goodsForm.CategoryId,
 		BrandId:         goodsForm.Brand,
-	});err != nil {
+	}); err != nil {
 		HandleGrpcErrorToHttp(err, ctx)
 		return
 	}
@@ -326,4 +336,3 @@ func Update(ctx *gin.Context){
 		"msg": "更新成功",
 	})
 }
-
