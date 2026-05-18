@@ -3,19 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
-	"google.golang.org/grpc"
 	"mxshop_srvs/inventory_srv/proto"
 	"sync"
-)
 
+	"google.golang.org/grpc"
+)
 
 var invClient proto.InventoryClient
 var conn *grpc.ClientConn
 
-func TestSetInv(goodsId, Num int32){
+func TestSetInv(goodsId, Num int32) {
 	_, err := invClient.SetInv(context.Background(), &proto.GoodsInvInfo{
 		GoodsId: goodsId,
-		Num: Num,
+		Num:     Num,
 	})
 	if err != nil {
 		panic(err)
@@ -33,11 +33,13 @@ func TestInvDetail(goodsId int32) {
 	fmt.Println(rsp.Num)
 }
 
+// 测试扣减
 func TestSell(wg *sync.WaitGroup) {
 	/*
-	1. 第一件扣减成功： 第二件： 1. 没有库存信息 2. 库存不足
-	2. 两件都扣减成功
-	 */
+		 测试以下case看看事务是否生效：
+			1. 第一件扣减成功： 第二件： 1. 没有库存信息 2. 库存不足
+			2. 两件都扣减成功
+	*/
 	defer wg.Done()
 	_, err := invClient.Sell(context.Background(), &proto.SellInfo{
 		GoodsInfo: []*proto.GoodsInvInfo{
@@ -64,7 +66,7 @@ func TestReback() {
 	fmt.Println("归还成功")
 }
 
-func Init(){
+func Init() {
 	var err error
 	conn, err = grpc.Dial("127.0.0.1:50051", grpc.WithInsecure())
 	if err != nil {
@@ -72,8 +74,6 @@ func Init(){
 	}
 	invClient = proto.NewInventoryClient(conn)
 }
-
-
 
 func main() {
 	Init()
@@ -84,7 +84,7 @@ func main() {
 	//并发情况之下 库存无法正确的扣减
 	var wg sync.WaitGroup
 	wg.Add(20)
-	for i := 0; i<20; i++ {
+	for i := 0; i < 20; i++ {
 		go TestSell(&wg)
 	}
 
