@@ -552,6 +552,213 @@ web服务层的接口都是跟业务强相关的，
 
 - jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/tests/inventory/main.go中测试文件中为每个商品都调用下setInv接口，方便后面使用
 
+### 2章 分布式锁
+
+#### 2-1 并发场景下的库存扣减不正确问题
+
+1. 先在tests/inventory/main.go模拟并发10个请求并发请求对同一个商品进行并发扣减库存复现下扣减库存，数据不一致的问题？
+   1. 详见tests/inventory/main.go的main方法
+
+#### 2-2 通过锁解决并发的问题
+
+1. 本节讲了使用go自带的 互斥锁作为全局大锁解决的并发读写数据的问题
+   1. 使用var m sync.Mutex // 全局大锁-互斥锁
+   2. 重点细节：这个锁的加锁和释放锁一定要写在事务完成即commit之后，才能正确生效
+2. 但是这种**原生全局大锁**存在缺点？有很大性能问题
+   1. 假设有10万并发，这里并不是请求的同一件商品，10w个并发请求里面可能请求的商品只有1万件，平均10个人读取同一商品，但是这种原生锁的写法是写在事务外的，循环外的，其实只要给对同一商品的10个请求加锁就可以，这种却导致10w个请求都要被动强制加上锁，那性能下降很厉害 --- **锁粒度太大了的问题**
+      1. 它目前只能加在事务外，因为在commit之后才能真正释放锁，必须确保事务内不能有锁否则无效
+         1. 而事务必须是批量循环之外的，因为事务一般是控制批量的，万一批量中哪一条失败，事务也要保证批量全部失败
+      2. 后面讲解分布式锁会自动解决这个问题
+   2. 就算解决了锁的粒度大问题，这🀄种全局原生锁在分布式场景下，还是会有问题，下节课细节！
+
+
+
+#### 2-3 原生互斥锁的局限与锁粒度优化
+
+- 结合 [`Sell()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L56) 的注释，这里老师大概率是在继续说明：**问题不只是“有没有锁”，而是“锁的粒度是否合理”**
+- 使用全局 [`sync.Mutex`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L53) 确实能解决单进程内的并发安全问题，但它会把所有商品的扣库存请求都串行化
+  - 即使两个请求操作的是完全不同的商品，也必须互相等待
+  - 这样会导致锁范围大于真实冲突范围，吞吐量下降非常明显
+- 这里先把两个概念彻底分开：
+  1. **全局大锁**：整个扣库存接口共用一把锁
+  2. **每个商品一把锁**：不同商品用不同锁，同一个商品才抢同一把锁
+- 举个最简单的单机场景：
+  - 请求A买商品 `1001`
+  - 请求B买商品 `1002`
+- 如果是**全局大锁**：
+  - A 先进入后，B 必须等待
+  - 因为整个服务里只有一把总锁
+  - 不管你操作的是 `1001` 还是 `1002`，都要先抢这一把锁
+- 如果是**每个商品一把锁**：
+  - A 去抢 `goods_1001` 对应的锁
+  - B 去抢 `goods_1002` 对应的锁
+  - 因为是两把不同的锁，所以 A 和 B 可以同时执行
+- 所以两者的核心区别就是：
+  - **全局大锁**：所有商品请求全部串行
+  - **每个商品一把锁**：只有同商品请求才串行，不同商品可以并行
+- 库存场景里的真实冲突其实只发生在**同一个 goodsId** 上
+  - 所以更合理的思路是：**按商品维度加锁**
+  - 即：同一商品串行，不同商品并行
+- 这一节真正想引出的结论是：
+  1. 原生互斥锁只能解决**单机单进程**问题
+  2. 全局大锁性能差，锁粒度太粗
+  3. 锁应该跟资源走，库存服务的资源标识就是 `goodsId`
+- 但即便把思路变成“每个商品一把锁”，Go 原生 [`sync.Mutex`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L53) 依然有本质局限：
+  - 它只能存在当前进程内
+  - 如果库存服务部署成多实例，实例 A 的锁管不到实例 B
+  - 所以它不适合微服务生产环境里的多实例部署场景
+- 这里容易绕，举一个最具体的例子：
+  1. 现在库存服务部署了两台机器，分别是 `inventory_srv-1` 和 `inventory_srv-2`
+  2. 商品 `goodsId=1001` 当前库存只剩 1 件
+  3. 用户 A 的请求被负载均衡转发到 `inventory_srv-1`
+  4. 用户 B 的请求几乎同时被转发到 `inventory_srv-2`
+  5. 假设你在两台机器里都写了“每个商品一把本地锁”的逻辑，比如本机内存里有 `map[goodsId]*sync.Mutex`
+- 这时会发生什么：
+  - 在 `inventory_srv-1` 里，A 请求拿到的是 **机器1内存里的** `goods_1001` 锁
+  - 在 `inventory_srv-2` 里，B 请求拿到的是 **机器2内存里的** `goods_1001` 锁
+  - 虽然锁名字都叫 `goods_1001`，但它们其实不是同一把锁，而是两台机器内存中的两个不同对象
+- 结果就是：
+  - A 请求可以在机器1里继续执行：查库存=1，准备扣减
+  - B 请求也可以在机器2里继续执行：查库存=1，准备扣减
+  - 两边都以为自己已经“加锁成功”了
+  - 但实际上它们根本没有互斥到一起
+  - 最终就可能两个请求都扣减成功，形成超卖
+- 本质原因就一句话：
+  - [`sync.Mutex`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L53) 只能锁住**当前 Go 进程里的 goroutine**
+  - 它锁不住另一台机器、另一个进程里的请求
+- 所以“每个商品一把本地锁”只在下面这种情况下成立：
+  - 库存服务只有**一个实例**
+  - 所有请求都只会进这一个进程
+- 一旦进入微服务常见的部署方式：
+  - 多实例
+  - 多容器
+  - 多机器
+  - 前面这种本地锁方案就失效了
+- 这也就是为什么后面必须引入 Redis 分布式锁：
+  - 因为 Redis 是所有实例都能访问到的公共位置
+  - 不管请求落到哪台机器，抢的都是 Redis 里的同一把 `goods_1001` 锁
+  - 这样才是真正意义上的“同一商品全局互斥”
+
+#### 2-4 Redis分布式锁实现按商品维度并发控制
+
+- 缺失的视频大概率就是从“单机锁不够”自然过渡到“分布式锁”
+- 这一节如果按学习顺序，建议先认识源码里用到的几个库，不然直接看业务代码会很跳：
+  1. [`goredislib`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L11)：Go 操作 Redis 的客户端库
+  2. [`redsync`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L12)：基于 Redis 实现分布式锁的 Go 库
+  3. [`goredis.NewPool()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L63)：适配器（桥梁），作用：把 go-redis 和 redsync 连起来，因为 redsync 不直接绑定某个 redis 客户端(因为有很多go-redis客户端)，所以需要一个桥接包适配 go-redis
+     1. 只有你用 redsync 分布式锁的时候，才需要它！
+- 你可以把它们的关系理解成：
+  - Redis = 锁真正存放的地方
+  - [`go-redis`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L11) = 访问 Redis 的工具
+  - [`redsync`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L12) = 基于这个工具再包装出“加锁/解锁”能力
+- 所以源码这一小段的阅读顺序应该是：
+  1. [`goredislib.NewClient()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L60) —— 先连上 Redis
+  2. [`goredis.NewPool()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L63) —— 做一层适配
+  3. [`redsync.New()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L64) —— 创建分布式锁管理器
+  4. [`rs.NewMutex()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L90) —— 创建某个商品的锁对象
+  5. [`mutex.Lock()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L91) —— 加锁
+  6. [`mutex.Unlock()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L109) —— 解锁
+- 然后再理解 Redis 在这里的角色：
+  - Redis 在这里不是拿来存业务库存数据的核心数据库
+  - 而是拿来做“所有服务实例都能看到的公共锁状态中心”
+- 这节重点应当是：
+  1. 微服务多实例时，单机锁失效
+  2. 必须引入一个所有实例都能访问的共享锁协调者
+  3. Redis 很适合承担这个角色
+- 为什么 Redis 适合做分布式锁：
+  1. **所有实例都能访问同一个 Redis**
+  2. Redis 单线程执行命令，单条命令天然具备原子性
+  3. Redis 性能高，做短时间锁竞争开销比较小
+  4. Redis 支持给 key 设置过期时间，避免服务异常退出后锁永远不释放
+- 再说分布式锁的大致原理，可以先记成下面这个模型：
+  - 谁先在 Redis 里成功创建了某个锁 key，谁就拿到锁
+  - 后来的请求看到这个 key 已经存在，就说明锁已经被别人占着，要么等待，要么失败返回
+  - 业务完成后，持锁者再把这个 key 删除，表示释放锁
+- 对应到库存场景：
+  - 商品 `1001` 的锁，可以理解成 Redis 里一个 key：`goods_1001`
+  - 请求 A 先抢到 `goods_1001`
+  - 请求 B 再来抢时，发现 Redis 里已经有这个 key，就知道商品 `1001` 正在被别人处理
+- 所以 Redis 分布式锁本质上就是：
+  - 用 **Redis 的一个唯一 key** 表示一把锁
+  - 用 **创建 key 是否成功** 表示是否拿到锁
+  - 用 **删除 key** 表示释放锁
+- 如果从 Redis 命令角度粗略理解，最经典语法是：
+
+```bash
+SET goods_1001 request_unique_value NX EX 30
+```
+
+- 这个命令可以拆开理解：
+  - `SET`：设置一个 key
+  - `goods_1001`：锁名，也就是哪一个商品的锁
+  - `request_unique_value`：当前这次请求的唯一标识，防止误删别人的锁
+  - `NX`：只有当 key 不存在时才设置成功
+  - `EX 30`：30 秒过期，避免死锁
+- 只要这个命令执行成功，就说明：
+  - 当前请求抢锁成功
+  - Redis 里已经有了 `goods_1001`
+- 如果执行失败，就说明：
+  - 这个 key 已经存在
+  - 别的请求已经拿到了这把锁
+- 为什么 value 不能随便写个 `1`，而要写唯一值：
+  - 因为释放锁时，必须确认“这把锁还是不是我自己的”
+  - 否则会误删别的请求后来重新加上的锁
+- 所以更严谨的释放锁思路是：
+  1. 先比较 Redis 中锁的 value 是否等于自己当初写入的唯一值
+  2. 只有相等，才允许删除
+- 你可以把 [`redsync`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L12) 暂时理解成一个“帮你封装好了 Redis 分布式锁细节的库”：
+  - 你不需要手写 `SET NX EX`
+  - 也不需要自己手写 Lua 删除逻辑
+  - 它帮你封装成了更像 Go 对象的调用方式
+- 锁的命名方式也很关键：
+  - 锁名不是写死一把全局锁
+  - 而是根据商品 id 动态生成，如 `goods_1`、`goods_2`
+  - 这就实现了按商品维度隔离并发
+- 这里还要顺手理解一个你现在最容易困惑的点：
+  - **为什么 Redis 商品锁可以写在循环内部，而原生全局互斥锁通常写在循环外？**
+- 本质原因不是“Redis 锁更高级”，而是：**锁保护的对象范围即锁的粒度不同**
+- 先看原生全局锁：
+  - 如果你只有一把 [`sync.Mutex`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L53)
+  - 那它保护的不是某个商品，而是整个 `Sell` 扣库存流程
+  - 因为这把锁没有区分 `goodsId`
+  - 所以你只能在进入整个批量扣减逻辑之前先加锁，在全部处理完并提交后再解锁
+  - 也就是它只能写在**循环外**
+  - 为什么不能把这把“全局锁”写进循环里：**它是全局不能针对单个商品加所有不能放在循环内部**
+    - 假设一个订单里有 3 个商品
+    - 你在循环第一轮把全局锁加上，处理完商品1就释放
+    - 这时另一个请求马上进来，又拿到这把全局锁，开始改商品1、商品2、商品3
+    - 这样没有针对商品纬度加锁，每次循环都加锁解锁，相当于无用锁，没有用，锁失效了
+- 再看 Redis 商品锁：
+  - 它不是一把总锁，而是按商品动态生成锁名
+  - 处理商品 `1001` 时，拿的是 `goods_1001`
+  - 处理商品 `1002` 时，拿的是 `goods_1002`
+  - 也就是说，它保护的是“某一个商品的库存修改”
+- 所以 Redis 商品锁就天然可以写在循环内部：
+  - 循环到哪个商品，就给哪个商品加锁
+  - 当前商品处理完，再释放当前商品锁
+  - 下一个商品再拿下一把商品锁
+- 你可以这么对比理解：
+  1. **全局锁**保护的是“整笔订单扣库存流程”
+  2. **商品锁**保护的是“单个商品库存修改动作”
+- 因为保护范围不一样，所以放置位置不一样：
+  - 保护整段流程的锁，通常写在循环外
+  - 保护单个商品的锁，通常写在循环内
+
+
+
+---
+- 这一节最后通常会顺势引出：
+  - 业务层可以用 Redis 分布式锁控制并发
+  - 数据库层还可以用悲观锁，比如 MySQL 的 `for update`
+  - 所以后面课程直接跳到 `for update`，本质是在讲另一种并发控制方案
+
+#### 2-3 和 2-4 的连续学习总结
+
+- `2-2` 讲的是：单机内先用原生互斥锁把并发安全问题控制住
+- `2-3` 讲的是：原生锁虽然能用，但锁粒度太粗，而且只能管当前进程
+- `2-4` 讲的是：微服务多实例下要升级为按商品维度的 Redis 分布式锁
+- 再后面继续讲 MySQL `for update`，就是把并发控制从业务层下沉到数据库层
+
 ## 14周 购物车微服务
 
 

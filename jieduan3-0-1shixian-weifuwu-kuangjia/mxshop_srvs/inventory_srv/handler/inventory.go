@@ -8,8 +8,13 @@ import (
 
 	"github.com/apache/rocketmq-client-go/v2/consumer"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
+
+	// redis客户端工具
 	goredislib "github.com/go-redis/redis/v8"
+	// 分布式锁库（Redis 官方推荐的分布式锁）
 	"github.com/go-redsync/redsync/v4"
+
+	// redis连接池
 	"github.com/go-redsync/redsync/v4/redis/goredis/v8"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -50,11 +55,15 @@ func (*InventoryServer) InvDetail(ctx context.Context, req *proto.GoodsInvInfo) 
 	}, nil
 }
 
+// var m sync.Mutex // 互斥锁
+
 // 扣减库存
 func (*InventoryServer) Sell(ctx context.Context, req *proto.SellInfo) (*emptypb.Empty, error) {
 	//没有事务时的漏洞举例子：扣减库存， 本地事务 [1:10,  2:5, 3: 20]，如第一个扣了，第二个库存不足扣减失败，导致异常扣减，数据不一致 --- 只能全部成功或全部失败
 	//数据库基本的一个应用场景：就是数据一致性--- 数据库事务，gorm本身是支持事务的
 	//并发情况之下 可能会出现超卖 1
+
+	// 使用redis全局锁，解决 原生进程内sync.Mutex锁在分布式下缺点
 	client := goredislib.NewClient(&goredislib.Options{
 		Addr: "192.168.0.104:6379",
 	})
@@ -85,6 +94,7 @@ func (*InventoryServer) Sell(ctx context.Context, req *proto.SellInfo) (*emptypb
 		//}
 
 		//for {
+		// 创建商品粒度的锁
 		mutex := rs.NewMutex(fmt.Sprintf("goods_%d", goodInfo.GoodsId))
 		if err := mutex.Lock(); err != nil {
 			return nil, status.Errorf(codes.Internal, "获取redis分布式锁异常")
@@ -104,6 +114,7 @@ func (*InventoryServer) Sell(ctx context.Context, req *proto.SellInfo) (*emptypb
 		inv.Stocks -= goodInfo.Num
 		tx.Save(&inv)
 
+		// 释放redis分布式锁
 		if ok, err := mutex.Unlock(); !ok || err != nil {
 			return nil, status.Errorf(codes.Internal, "释放redis分布式锁异常")
 		}

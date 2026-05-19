@@ -81,11 +81,13 @@ func main() {
 	//for i = 421; i<=840; i++ {
 	//	TestSetInv(i, 100)
 	//}
-	//并发情况之下 库存无法正确的扣减
-	var wg sync.WaitGroup
+
+	// 测试模拟并发请求对同一个商品进行并发扣减库存，复现库存扣减数据不一致的问题
+	// 测试结果发现：并发情况之下 库存无法正确的扣减
+	var wg sync.WaitGroup // 如果不使用wg，主线程一启动20个协程，立刻执行 conn.Close() → 关闭数据库，协程还没跑完，连接就断了
 	wg.Add(20)
 	for i := 0; i < 20; i++ {
-		go TestSell(&wg)
+		go TestSell(&wg) // 测试模拟并发，必须要go协程
 	}
 
 	wg.Wait()
