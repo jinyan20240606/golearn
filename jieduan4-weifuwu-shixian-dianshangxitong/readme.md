@@ -1101,7 +1101,14 @@ mutex := rs.NewMutex("lock_key")
 - 这是 电商系统最核心的三张表：
   - ShoppingCart 购物车表
   - OrderInfo 订单主表
-  - OrderGoods 订单商品表
+  - OrderGoods 订单商品表 （订单对商品是一对多关系）
+    - 为什么一定单独拎出来，如果硬塞进订单表里会存在以下问题？
+      - 无法统计每个商品数量
+      - 无法单独查某个商品卖了多少
+      - 无法统计商品销量
+      - 无法展示订单详情
+      - 无法做售后、退款
+      - 数据库无法索引、查询极慢
   - 它们的关系是：用户 =(加购)=> 购物车 =(下单)=> 订单主表 (OrderInfo) + 订单商品表 (OrderGoods)
 - 用户业务流程：
   - 用户浏览商品
@@ -1135,6 +1142,80 @@ id	order	goods	goods_name	goods_image	goods_price	nums
 
 
 - 来生成表：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/order_srv/model/main/main.go`
+- 重点关注
+  - 冗余字段的合理使用场景
+
+#### 1-3 完成proto的定义
+
+- 就是完成相关的微服务接口类型的定义
+- 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/order_srv/proto`
+
+
+#### 1-4 启动订单服务
+略
+#### 1-5 购物车列表和添加商品到购物车接口的实现
+
+- 新建`order_srv/handler/order.go`文件
+- 完成`CartItemList`方法
+- 完成`CreateCartItem`方法
+
+#### 1-6 更新购物车和删除购物车记录接口
+
+- 完成`UpdateCartItem`方法
+- 完成`DeleteCartItem`方法
+
+#### 1-7 订单列表页接口
+
+- 完成`OrderList`方法
+  - 这个接口2处用到：
+    - 个人前台页面，查看自己的订单
+    - 管理员后台页面，查看所有用户订单
+
+#### 1-8 查询订单详情接口
+
+- 完成`OrderDetail`方法
+
+#### 1-9 新建订单接口
+
+- 实现`CreateOrder`方法，这个是最复杂的接口，本节先实现基本功能
+- 重点注意
+  - 需要2个第三方微服务链接：`order_srv/initialize/srv_conn.go`
+    - 库存微服务和商品微服务
+    - 具体拨号协议链接见下节细讲
+  - 在`ExecuteLocalTransaction`中进行跨服务调用
+
+#### 1-10 订单微服务实现链接库存微服务和商品微服务
+
+- 见`order_srv/initialize/srv_conn.go`
+  - 库存微服务和商品微服务
+
+#### 1-11 调用商品微服务批量获取商品信息
+
+- 接着实现`CreateOrder`方法
+  - 见 `global.GoodsSrvClient.BatchGetGoods`相关代码处
+#### 1-12 调用库存微服务进行库存扣减
+
+- 接着实现`CreateOrder`方法中的接着实现库存的扣减
+
+#### 1-13 通过mysql本地事务确保订单新建过程的顺利
+
+- 接着实现`CreateOrder`方法中的生成订单逻辑
+  - 用GenerateOrderSn方法统一生产订单编号
+- 生成后，用tx.CreateInBatches批量同步插入orderGoods订单商品信息表
+  - 原因：你现在有 一个订单 买了3 个商品，所以要往 ordergoods 表插入 3 条数据
+- 最后删除购物车里的记录
+  - 使用`tx.Where(&model.ShoppingCart{User: orderInfo.User, Checked: true}).Delete`
+  - gorm中也提供了永久删除软删除，批量删除，条件删除方法
+- 添加本地事务：包含生成订单-批量同步订单商品信息表-批量删除购物车记录
+  - 使用`tx := global.DB.Begin()`
+  - 最终成功提交`tx.Commit()`，失败的地方调用回滚`tx.Rollback()`
+  - 其他跨服务的事务后面统一交由分布式事务去处理
+- 基本功能完成，最终返回消息，事务执行成功了需要返回消息
+  - 当回滚了，直接在回滚处return失败的消息，也得处理返回创建失败的逻辑
+
+
+#### 1-14 更新订单的状态接口
+
 ## 15周 支付宝支付，用户操作微服务
 
 

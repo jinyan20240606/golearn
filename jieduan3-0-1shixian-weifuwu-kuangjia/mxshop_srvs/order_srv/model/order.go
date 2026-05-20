@@ -52,6 +52,10 @@ type OrderGoods struct {
 	Goods int32 `gorm:"type:int;index"`
 
 	//为什么把商品的信息保存下来了？？？ ， 故意要字段冗余， 因为高并发系统中我们一般都不会遵循三范式  1、做镜像 记录，后面产生纠纷，能拿到用户当时下单的商品快照，2、也是为了提高性能，减少跨服务之间的查询，有些时候故意要字段冗余
+	// 这些冗余字段的数据流转逻辑？-- 用户在购物车页面点击结算还未付款，此时发送生成订单请求，然后生成订单逻辑如下：
+	// // 1. 前端只传：商品ID + 数量
+	// // 2. 后端立刻去商品表查询：
+	// // 3. 把查询到的商品信息，直接写入订单商品表（冗余保存）
 	GoodsName  string `gorm:"type:varchar(100);index"`
 	GoodsImage string `gorm:"type:varchar(200)"`
 	GoodsPrice float32

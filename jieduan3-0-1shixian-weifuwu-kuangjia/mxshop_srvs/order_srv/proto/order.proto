@@ -31,7 +31,7 @@ message CartItemRequest {
     int32 id = 1;
     int32 userId = 2;
     int32 goodsId = 3;
-    string goodsName = 4;
+    string goodsName = 4; // 可以作为冗余字段，可以先不加，占位，本节项目中没有使用，冗余字段只在生成订单时用了
     string goodsImage = 5;
     float goodsPrice = 6;
     int32 nums = 7;
