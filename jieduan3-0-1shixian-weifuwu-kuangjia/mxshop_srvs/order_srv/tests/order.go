@@ -3,18 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"google.golang.org/grpc"
 	"mxshop_srvs/order_srv/proto"
-)
 
+	"google.golang.org/grpc"
+)
 
 var orderClient proto.OrderClient
 var conn *grpc.ClientConn
 
-func TestCreateCartItem(userId, nums, goodsId int32){
+func TestCreateCartItem(userId, nums, goodsId int32) {
 	rsp, err := orderClient.CreateCartItem(context.Background(), &proto.CartItemRequest{
-		UserId: userId,
-		Nums: nums,
+		UserId:  userId,
+		Nums:    nums,
 		GoodsId: goodsId,
 	})
 	if err != nil {
@@ -35,9 +35,10 @@ func TestCartItemList(userId int32) {
 	}
 }
 
+// 更新购物车状态
 func TestUpdateCartItem(id int32) {
 	_, err := orderClient.UpdateCartItem(context.Background(), &proto.CartItemRequest{
-		Id: id,
+		Id:      id,
 		Checked: true,
 	})
 	if err != nil {
@@ -45,7 +46,7 @@ func TestUpdateCartItem(id int32) {
 	}
 }
 
-func Init(){
+func Init() {
 	var err error
 	conn, err = grpc.Dial("127.0.0.1:50051", grpc.WithInsecure())
 	if err != nil {
@@ -54,6 +55,7 @@ func Init(){
 	orderClient = proto.NewOrderClient(conn)
 }
 
+// 新建订单接口
 func TestCreateOrder() {
 	_, err := orderClient.CreateOrder(context.Background(), &proto.OrderRequest{
 		UserId:  1,
@@ -81,7 +83,7 @@ func TestGetOrderDetail(orderId int32) {
 
 }
 
-func TestOrderList(){
+func TestOrderList() {
 	rsp, err := orderClient.OrderList(context.Background(), &proto.OrderFilterRequest{
 		UserId: 1,
 	})
@@ -97,7 +99,7 @@ func TestOrderList(){
 func main() {
 	Init()
 	//启动两个依赖的微服务 商品 和库存
-	//TestCreateCartItem(1,1,422)
+	TestCreateCartItem(1, 1, 422)
 	//TestCartItemList(1)
 	//TestUpdateCartItem(1)
 	//TestCreateOrder()

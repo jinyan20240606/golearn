@@ -1216,6 +1216,17 @@ id	order	goods	goods_name	goods_image	goods_price	nums
 
 #### 1-14 更新订单的状态接口
 
+比如支付宝支付以后，支付宝会向我们发起回调，这时候我们就需要更改我们的订单状态了
+
+- 完成`UpdateOrderStatus`方法
+
+#### 1-15 订单服务接口调试1
+
+- 先启动main文件入口-订单服务
+- 完成tests测试文件调试测试见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/order_srv/tests/order.go`
+
+#### 1-16 订单服务接口调试2
+
 ## 15周 支付宝支付，用户操作微服务
 
 

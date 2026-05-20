@@ -406,8 +406,12 @@ func (*OrderServer) CreateOrder(ctx context.Context, req *proto.OrderRequest) (*
 	return &proto.OrderInfoResponse{Id: orderListener.ID, OrderSn: order.OrderSn, Total: orderListener.OrderAmount}, nil
 }
 
+// 更新订单状态接口
 func (*OrderServer) UpdateOrderStatus(ctx context.Context, req *proto.OrderStatus) (*emptypb.Empty, error) {
-	//先查询，再更新 实际上有两条sql执行， select 和 update语句
+	//之前的更新是：先查询，再更新 实际上有两条sql执行， select 和 update语句，之前要先查询是有很多业务逻辑
+	// 这里可以直接更新，如果不存在就直接返回报错
+	// 这块注意也是必须用OrderSn作为条件，而不是订单的id
+	// // ----- 因为：我们给支付宝传递参数生成支付url时，我们传的是OrderSn，支付宝回调时也是给的OrderSn
 	if result := global.DB.Model(&model.OrderInfo{}).Where("order_sn = ?", req.OrderSn).Update("status", req.Status); result.RowsAffected == 0 {
 		return nil, status.Errorf(codes.NotFound, "订单不存在")
 	}
