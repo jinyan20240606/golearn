@@ -1083,12 +1083,58 @@ mutex := rs.NewMutex("lock_key")
 
 ## 14周 购物车微服务
 
-
+电商系统中的订单模块是最核心的业务模块，也涉及分布式事务
 ### 1章 订单和购物车微服务-service
 
 #### 1-1 需求分析
 
+也基于前端界面和后台管理系统功能需求分析
 
+#### 1-2 订单相关表结构
+
+- 先新建一个订单相关的微服务`order_srv`
+  - 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/order_srv`目录
+- 表结构设计见：`order_srv/model/order.go`
+- 表分析如下：
+----
+
+- 这是 电商系统最核心的三张表：
+  - ShoppingCart 购物车表
+  - OrderInfo 订单主表
+  - OrderGoods 订单商品表
+  - 它们的关系是：用户 =(加购)=> 购物车 =(下单)=> 订单主表 (OrderInfo) + 订单商品表 (OrderGoods)
+- 用户业务流程：
+  - 用户浏览商品
+  - 加入 ShoppingCart
+  - 勾选购物车商品 → 生成 OrderInfo
+  - 同时把购物车里的商品复制到 OrderGoods
+  - 下单后清空购物车选中项
+
+```sql
+----- 购物车表数据示例
+id	user	goods	nums	checked
+1	10001	5001	2	1
+2	10001	5003	1	1
+3	10001	5005	3	0
+4	10002	5002	1	1
+5	10002	5004	5	1
+
+--- 订单主表数据示例
+id	user	order_sn	pay_type	status	trade_no	order_mount	pay_time	address	signer_name	singer_mobile	post
+1	10001	DDN20260520001	alipay	TRADE_SUCCESS	20260520220014049814123456	399.80	2026-05-20 14:30:20	北京市朝阳区 XX 小区 1 号楼	张三	13800138000	100020
+2	10002	DDN20260520002	wechat	PAYING	""	599.50	null	上海市浦东新区 XX 路 88 号	李四	13900139000	200010
+
+--- 订单商品表数据示例
+id	order	goods	goods_name	goods_image	goods_price	nums
+1	1	5001	夏季纯棉短袖	/img/short1.jpg	89.90	2
+2	1	5003	休闲运动短裤	/img/pants1.jpg	220.00	1
+3	2	5002	无线蓝牙耳机	/img/headset.jpg	199.90	1
+4	2	5004	家用保温杯	/img/cup.jpg	79.92	5
+```
+
+
+
+- 来生成表：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/order_srv/model/main/main.go`
 ## 15周 支付宝支付，用户操作微服务
 
 
