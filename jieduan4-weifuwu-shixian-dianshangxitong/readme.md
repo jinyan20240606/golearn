@@ -603,7 +603,7 @@ web服务层的接口都是跟业务强相关的，
   1. 原生互斥锁只能解决**单机单进程**问题
   2. 全局大锁性能差，锁粒度太粗
   3. 锁应该跟资源走，库存服务的资源标识就是 `goodsId`
-- 但即便把思路变成“每个商品一把锁”，Go 原生 [`sync.Mutex`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L53) 依然有本质局限：
+- 但即便把思路变成“每个商品一把锁”，Go 原生 [`sync.Mutex`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L53) 依然有**本质局限**：
   - 它只能存在当前进程内
   - 如果库存服务部署成多实例，实例 A 的锁管不到实例 B
   - 所以它不适合微服务生产环境里的多实例部署场景
@@ -656,6 +656,13 @@ web服务层的接口都是跟业务强相关的，
   2. [`goredis.NewPool()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L63) —— 做一层适配
   3. [`redsync.New()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L64) —— 创建分布式锁管理器
   4. [`rs.NewMutex()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L90) —— 创建某个商品的锁对象
+     1. redsync.NewMutex (第一个参数) → 就是分布式锁的 KEY，value（唯一随机串）由 Redsync 自动生成，不需要你传！
+        1. 自动生成的随机value保证防误删：唯一标识当前这一次加锁，防止别人删你的锁，保证锁安全
+     2. 这把锁会自动：
+        1. 向所有 Redis 主节点并发加锁
+        2. 判断是否超过半数成功
+        3. 自动用 Lua 脚本保证原子
+        4. 自动处理 超时、重试、续期
   5. [`mutex.Lock()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L91) —— 加锁
   6. [`mutex.Unlock()`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L109) —— 解锁
 - 然后再理解 Redis 在这里的角色：
@@ -692,7 +699,8 @@ SET goods_1001 request_unique_value NX EX 30
   - `SET`：设置一个 key
   - `goods_1001`：锁名，也就是哪一个商品的锁
   - `request_unique_value`：当前这次请求的唯一标识，防止误删别人的锁
-  - `NX`：只有当 key 不存在时才设置成功
+  - `NX`：只有当 key 不存在时才设置成功返回1，如果存在，则设置失败返回0
+    - 这个命令**非常核心，将取值和设置值做成了原子操作，把2步合成一步了**
   - `EX 30`：30 秒过期，避免死锁
 - 只要这个命令执行成功，就说明：
   - 当前请求抢锁成功
@@ -706,6 +714,35 @@ SET goods_1001 request_unique_value NX EX 30
 - 所以更严谨的释放锁思路是：
   1. 先比较 Redis 中锁的 value 是否等于自己当初写入的唯一值
   2. 只有相等，才允许删除
+
+---
+1. redis分布锁三大核心设计
+   1. 互斥性：同一时间只有一个客户端能持有锁
+   2. 防死锁：给锁设置过期时间，宕机自动释放，避免死锁
+   3. 安全性-防误删：锁 value 存客户端唯一标识，只能自己删自己的锁
+2. **为什么必须保证原子性操作？？？**
+   1. 什么是分步操作（非原子，致命错误）
+      1. 错误加锁：两步拆分
+      2. GET lock_key 判断锁是否存在
+      3. 不存在再执行 SET lock_key
+   2. 漏洞：两步中间存在时间窗口
+      1. 客户端 A 查询无锁
+      2. 还没执行 SET，客户端 B 同时查询也无锁
+      3. 两个客户端同时加锁成功，锁彻底失效
+   3. 错误解锁：两步拆分
+      1. GET lock_key 判断是否自己的锁
+      2. 判断通过执行 DEL 删除锁
+   4. 漏洞：
+      1. 客户端 A 拿到自己锁标识
+         1. 锁刚好过期自动释放，客户端 B 抢到锁
+         2. A 执行 DEL，直接删掉 B 的锁，造成锁误删
+  1. 原子操作解决所有问题
+     1. 原子 = 多条命令合并为一步执行，中间无法被插队、无法被打断
+     2. 加锁原子：SET NX EX 一条命令完成 判断 + 写入 + 过期，杜绝并发抢锁漏洞
+     3. 解锁原子：Lua 脚本一次性完成 查询判断 + 删除，杜绝锁过期误删别人锁
+
+---
+
 - 你可以把 [`redsync`](../jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go#L12) 暂时理解成一个“帮你封装好了 Redis 分布式锁细节的库”：
   - 你不需要手写 `SET NX EX`
   - 也不需要自己手写 Lua 删除逻辑
@@ -751,6 +788,22 @@ SET goods_1001 request_unique_value NX EX 30
   - 业务层可以用 Redis 分布式锁控制并发
   - 数据库层还可以用悲观锁，比如 MySQL 的 `for update`
   - 所以后面课程直接跳到 `for update`，本质是在讲另一种并发控制方案
+##### Redis分布式锁 vs MySQL `for update`
+
+- Redis 分布式锁：业务层先抢锁，再操作数据库
+- MySQL `for update`：直接进事务，在数据库层锁行
+
+- Redis 分布式锁
+  - 优点：灵活，可跨服务/跨资源，能提前挡住并发
+  - 缺点：实现复杂，锁和事务容易边界不一致
+
+- MySQL `for update`
+  - 优点：和事务天然一体，代码简单，一致性直观
+  - 缺点：只能锁数据库行，热点并发压力集中到 MySQL
+
+- 记忆：
+  - 单库库存扣减：优先考虑 `事务 + for update`
+  - 跨服务、跨资源协调：更适合 Redis 分布式锁
 
 #### 2-3 和 2-4 的连续学习总结
 
@@ -759,7 +812,281 @@ SET goods_1001 request_unique_value NX EX 30
 - `2-4` 讲的是：微服务多实例下要升级为按商品维度的 Redis 分布式锁
 - 再后面继续讲 MySQL `for update`，就是把并发控制从业务层下沉到数据库层
 
+
+#### 2-5 mysql的forupdate语句实现悲观锁
+
+1. 悲观锁：先上锁，再干活，怕出事提前防，阻塞等待
+   1. SELECT ... FOR UPDATE 就是典型悲观锁
+   2. 并发不高、数据一致性要求极高、怕超卖怕出错
+   3. --就是将并行变成串行
+2. 乐观锁：直接干活，出事再回滚重试，不加锁不阻塞
+   1. 高并发流量大、追求性能、能接受少量失败重试
+
+```sql
+-- 1. 开启事务
+START TRANSACTION;
+
+-- 2. 查询商品库存 + 加悲观锁（锁住该行）
+SELECT stock FROM goods_stock WHERE goods_id = 1001 FOR UPDATE;
+
+-- 3. 业务判断 + 扣减库存
+UPDATE goods_stock SET stock = stock - 1 WHERE goods_id = 1001 AND stock > 0;
+
+-- 4. 提交事务，锁自动释放
+COMMIT;
+```
+
+- 使用 SELECT ... FOR UPDATE 悲观锁注意事项：
+  - 必须手动开启事务，而且MySQL 默认 autocommit=1，一条 SQL 就是一个事务，自动提交（不用写commit语句）。
+    - FOR UPDATE 必须手动开启事务才会生效，否则锁瞬间获取 + 释放，等于没加锁。
+  - 这把锁它实际是行锁，它的粒度很细，明确查询条件，只会锁住满足条件的数据，其他数据不会被锁住，否则不利于并发
+    - 只判断查询条件内的字段有没有包含索引字段，其他字段有没有索引完全不影响
+    - 只有在有索引时才会这样，如果没有索引时，这样做会自动升级成表锁
+      - 有索引（主键 / 唯一索引 / 普通索引） → 行锁
+      - 无索引 / 索引失效 → 锁全表（表锁）
+      - 表锁会导致并发卡死，所有请求互相阻塞
+  - FOR UPDATE 是 “排他锁（写锁--排他锁会阻塞所有写操作）”只要你加了，其他事务对这行的：
+    - 读（普通查询不受影响，因为是快照读）
+    - 修改 / 删除 / FOR UPDATE 查询，全部阻塞！
+    - 不是只锁更新语句，所有 “写入、加锁操作” 都会阻塞。
+  - 无索引时，哪怕查不到数据即0行匹配，也会锁全表，有索引 + 0 行匹配 → 不锁
+  - 行锁只锁命中行，不影响其他行，并发性能高
+    - 优点：粒度细、不干涉无关数据，并发性能好
+    - 隐患：索引使用不当极易升级为表锁，直接拖垮整体并发
+
+举例子：
+```sql
+CREATE TABLE stock(
+    id INT PRIMARY KEY,       -- 有索引
+    goods_id INT,             -- 无索引
+    stock INT,                -- 无索引
+    create_time DATETIME      -- 无索引
+);
+-- 场景 1：条件用有索引字段
+SELECT * FROM stock WHERE id=1 FOR UPDATE;
+-- 场景 2：条件用无索引字段
+SELECT * FROM stock WHERE goods_id=1001 FOR UPDATE;
+-- 场景 3：多条件组合: id有索引，goods_id无索引
+SELECT * FROM stock WHERE id=1 AND goods_id=1001 FOR UPDATE;
+```
+#### 2-6 gorm实现mysql的forupdate悲观锁
+
+- 官网文档高级查询里有介绍Locking用法介绍
+- 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go`
+- 首先数据库中那个autocommit问题，在gorm中，开启事务，开启事务后，数据库的autocommit会自动变为false
+  - tx := global.DB.Begin() // 开启事务
+  - 只要你不写commit，就不会自动commit
+- gorm的forupdate示例写法见
+  - 引入"gorm.io/gorm/clause"包
+    - clause 是 GORM 用来拼接「SQL 子句，写sql高级语法」的工具包专门帮你写：
+    - gorm高级语法写不了，只能原生sql或工具包，如以下语法：
+      - FOR UPDATE（悲观锁）
+      - ON DUPLICATE KEY UPDATE（存在则更新）
+      - UNION / UNION ALL
+      - 窗口函数
+      - WITH 递归查询
+      - 存储过程 CALL
+      - EXPLAIN
+      - 批量复杂更新
+      - GORM 负责普通 CURD，数据库高级语法（锁、合并更新、窗口函数、递归、UNION）都必须用 clause 或原生 SQL！
+  - 写`tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(&model.Inventory{Goods: goodInfo.GoodsId}).First(&inv);`
+- 使用 gorm 的 for update 写法实现 MySQL 悲观锁---- 也能解决2-3原生锁和分布式的问题
+  - 在单库单表库存扣减场景下，通常可以直接依赖“事务 + 行级悲观锁”解决并发超卖问题，
+  - 一般不需要再额外加全局互斥锁或 Redis 分布式锁。
+  - 但前提是：查询、判断、更新、提交必须全部放在同一个事务里完成。
+  - 但某些场景下，
+    - 场景 1：锁不在同一条数据库记录
+      - 业务不是只锁商品库存行，锁业务标识不在同一条数据，行锁约束不到
+    - 场景 2：锁范围超出数据库事务
+      - 业务逻辑包含Redis 缓存读写、MQ 发送、第三方接口调用、本地内存变量这些操作不在 MySQL 事务内，FOR UPDATE管不住，事务锁覆盖不全。
+
+#### 2-7 基于mysql的乐观锁实现分布式并发安全原理
+
+- 通过乐观锁实现分布式锁的逻辑，它不是真正的锁，没有加锁、解锁、等待。它是一种并发冲突检测机制
+  - 之前悲观锁性能不高，可以借助乐观锁来提升性能，想提升性能，最好不要加锁，只要加锁，带来的性能影响就是存在的，
+  - 乐观锁 性能远高于悲观锁
+    - 悲观锁：先加锁 → 再操作 → 释放锁（会阻塞）
+    - 乐观锁：无锁操作 → 更新时校验 → 失败重试（无阻塞）
+- 乐观锁就是利用版本号来实现，乐观锁 不需要 MySQL 加锁，全程 无事务锁、无行锁、无表锁完全靠 版本号 version 控制并发安全
+  - 之前在`inventory_srv/model/inventory.go`中Inventory的模型中，添加了Version字段，用于记录当前记录的版本号，用作分布式乐观锁的实现
+- 为什么能实现分布式安全？因为：不管你是1 台服务10 台服务集群，100 台服务分布式部署，更新语句是原子的！MySQL 会保证：只有一个请求能更新成功，其他全部更新失败。这就天然实现了 分布式并发安全
+
+
+**悲观锁实现流程**：
+```sql
+-- 步骤1 查询时把版本号一起查出来
+SELECT stock, version FROM inventory WHERE goods_id=?
+
+-- 步骤2 更新时把版本号一起更新
+UPDATE inventory
+SET stock = stock - 1, version = version + 1
+WHERE goods_id=? AND version=? -- 这块where条件里的version要和步骤1中查出来的版本号必须一致，若不一致说明源数据更新ju 被别人修改了
+-- 步骤 3：判断结果，
+-- 影响行数 = 1 → 成功，没人修改
+-- 影响行数 = 0 → 失败，说明被别人改了，重试即可
+-- 失败了，再重新执行步骤1和2，这时候就是根据新的版本号去更新数据了
+```
+
+
+#### 2-8 gorm实现基于mysql的乐观锁
+
+- 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/inventory_srv/handler/inventory.go` 的 `Where("goods = ? and version= ?"` 相关使用
+
+- 注意细节用法
+  - 使用乐观锁时，外层套个无限循环，专门用于乐观锁失败重试的逻辑，成功了就退出这个循环
+
+#### 2-9 基于redsync 的分布式锁实现同步
+
+- 基于redis实现分布式锁是业务中非常常用的手段
+- 实践练习demo见：`inventory_srv/utils/redis_lock/main.go`
+
+#### 2-10 redsync 集成到库存服务中
+
+前面2-3&4已经学过了，略
+
+#### 2-11 redis-redsync分布式锁源码解析
+
+面试常问
+
+原子操作和分步操作的区别
+
+- 原子操作：一步做完，中间不能被打断，要么成功、要么失败，不会出现中间状态。
+- 分步操作：分多步执行，中间可以被其他线程插入，会出现数据不一致、超卖、锁失效问题！
+
+- 其余见2-4即可
+- 后面的章节2-12到15 都是讲的redsync这个分布式锁的库的源码，都解决了哪些redis分布式锁场景下常见的问题
+
+#### 2-12 redis的redsync分布式锁源码解析过期时间和延长锁过期时间机制
+
+- 问题：如果我的服务挂掉了，删除锁的逻辑执行不了了，那么锁就会一直存在，造成死锁
+  - 解法：给锁加自动过期时间，Redsync 默认 8 秒，时间一到，Redis 自动删 key，即使服务挂了，锁也会自动释放
+  - 但是：假如锁设置成 8 秒，而业务执行要 10 秒，锁会先过期，业务还没结束，其他实例就可能重新抢到锁
+    - 解决：在锁过期之前主动续期，也就是调用 [`Mutex.Extend()`](jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/vendor/github.com/go-redsync/redsync/v4/mutex.go:157) 或同类刷新方法
+    - 这类续期逻辑通常要由业务方自己决定是否开启，而不是 redsync 默认自动后台续期
+      - 更准确的原因不是“redsync 自动续期一定会导致锁永久不释放”，而是：
+        - **自动续期本身是一种策略选择，不是通用安全默认值**
+        - redsync 作为通用库，只负责提供加锁、解锁、续期能力，不替业务决定“什么情况下该一直续、什么时候必须停止续”
+        - 是否续期，取决于你的业务是否真的还在健康执行、是否还有必要继续持有锁
+      - 场景还原
+        - 你业务拿到分布式锁，锁过期时间设为 8s
+        - 正常业务 1~2 秒跑完就释放锁
+        - 但也可能出现异常：业务线程卡住、死循环、长时间阻塞、外部依赖一直不返回
+        - 这时如果存在一个**脱离业务完成状态判断**的自动续期机制，它就可能持续调用 [`Mutex.Extend()`](jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/vendor/github.com/go-redsync/redsync/v4/mutex.go:157)
+        - 结果就是：锁会被不断续命，而真正需要这把锁的其他实例一直抢不到
+- 所以，“启动后台协程看门狗 + 每 1/3 过期时间续期 + 业务结束停止协程”这个思路，方向上是对的，但表述要更严谨：
+  - 它**降低风险**，但不是绝对地“完全解决一切卡住场景”
+  - 它成立的前提是：
+    - 看门狗协程的生命周期，和当前业务执行状态严格绑定
+    - 业务结束、超时、取消时，续期协程能立刻停止
+    - 最好再配合 [`context.Context`](../../../../../../usr/local/go/src/context/context.go:71) 超时控制，而不是只靠协程退出
+- 它为什么比“库默认自动刷新”更可控？
+  - 因为续期决策权在业务手里，不在 redsync 库里
+  - 你可以把续期条件绑定到：
+    - 请求上下文是否已取消
+    - 业务主流程是否已经结束
+    - 本次任务是否已超时
+    - 当前持锁者是否仍然健康
+  - 也就是说：**不是因为用了协程就天然安全，而是因为续期和业务状态绑定了**
+- 更准确的表述应该改成：
+  - 如果只是“某个业务 goroutine 阻塞”，看门狗协程**不一定会停止**
+  - 如果整个进程崩溃、Pod 被杀、服务实例宕机、运行时彻底失活，那么续期协程才会停止，锁会在 TTL 到期后自动释放
+  - 因此，安全续期的关键不是假设“业务一挂续期就停”，而是要让续期受业务上下文、超时和取消信号控制
+- 最后可以把这一段结论记成一句话：
+  - **Redsync 不默认自动续期，不是因为它不会做，而是因为“是否继续持锁”必须由业务语义决定；安全的看门狗续期，本质上是“业务绑定的有限续期”，不是无条件自动续命。**
+
+#### 2-13 redis-redsync分布式锁源码解析--如何防止锁被其他协程误删
+
+- 分布式锁需要解决的3大问题是1、互斥性，2、死锁，3、安全性
+
+- 安全性是锁只能被自己用户使用和删除持有，不能被其他用户使用和删除
+  - 解决：给锁加一个唯一标识
+    - mutex := redsync.NewMutex("order_lock_1001")；1参是指定的锁key，value（唯一随机串）由 Redsync 自动生成，不需要你传
+      - value就是锁的value唯一标识
+  - 原理：
+    - Key：商品 ID、业务 ID（goods_1001）
+    - Value：全局唯一 ID（UUID，随机串，别人猜不到）
+    - `SET lock_goods_1001 我的唯一UUID NX EX 10`
+
+#### 2-14 redis的分布式锁在集群环境下容易出现的问题
+
+- 前面讲的redis分布式锁是只考虑多台微服务实例共享一个redis实例作为分布式锁，还有高级场景：如果redis随着业务体量也上了集群，多个微服务实例要在redis集群中实现分布式锁呢？这该怎么办？
+  - 其实`redsync库`内部也帮我们封装好了
+- 实际业务中我们一般都会搭建redis主从集群，来提高redis可用性，之前的redis分布式锁在主从集群redis多实例中默认会出现问题
+- 场景流程
+  - 客户端向主节点执行 set lock key val nx ex 加锁成功
+  - 此时主节点还没把锁数据同步给从节点（Redis 主从是异步复制）
+  - 刚加完锁，主节点立刻宕机
+  - 哨兵 / 集群自动把从节点晋升为新主节点
+  - 新主节点没有这条锁数据
+  - 其他客户端直接在新主节点重新抢到同一把锁
+  - 同一把锁被两个客户端同时持有 → 锁失效，并发乱序、超卖
+- 本质原因
+  - Redis 主从异步复制，加锁成功不代表数据已经同步从库，主宕机瞬间直接丢锁。
+  - redsync库帮我们解决了：Redis 集群主从异步复制，主节点宕机导致锁丢失 **、多个客户端同时持锁的问题！**
+    - 它要求使用独立redis主节点，互相独立，无主从关系的部署方式上解决
+
+#### 2-15 redis分布式锁在集群下升级方案：redlock算法
+
+- 概念
+  - RedLock：性质：分布式锁算法，作用：解决 Redis 集群 / 主从环境下的锁不安全问题。内容：向多个 Redis 主节点加锁 → 半数成功才算加锁成功
+  - Redsync：性质：Go 语言实现的 RedLock 库，底层 100% 按照 RedLock 算法写的
+- 官方方案：RedLock 红锁（Redsync 底层原理）（红锁就是抢占锁的地盘）
+  - 向集群中半数以上独立 Redis 主节点同时发起加锁 --- **就是抢锁，看谁先抢到半数以上**
+    - 准备多台独立 Redis 主节点（互相独立，无主从关系，通常 5 个）。
+    - 必须使用多主模式，而不是redis主从模式
+      - 因为2-14节讲了主从模式的缺点
+  - 并发抢锁：客户端同时向这 5 个节点发起加锁请求（SET NX）。
+  - 过半成功：如果在有效时间内，加锁成功的节点数 >= N/2 + 1（比如 5 个节点要 >= 3 个），才算加锁成功！即**抢锁成功**
+  - 释放锁时，也批量向所有节点执行 Lua 解锁脚本
+  - 解决异步复制丢锁、主节点宕机丢锁问题
+  - 缺点：性能低、部署重、资源消耗大
+- 上面就是`redsync`的`NewMutex`源码原理 `mutex := redsync.NewMutex("order_lock_1001")`
+  - 给我创建一把遵守 RedLock 规则的分布式锁
+  - 这把锁会自动：
+  - 向所有 Redis 主节点并发加锁
+  - 判断是否超过半数成功
+  - 自动用 Lua 脚本保证原子
+  - 自动处理 超时、重试、续期
+
+
+##### 细节
+
+NewMutex内部就是对单体redis和redis集群都支持，用法如下
+
+```sql
+// 单体Redis
+pool := []*redis.Pool{singlePool}
+rs := redsync.New(pool)
+
+// 加锁
+mutex := rs.NewMutex("lock_key")
+
+------------
+
+// 多个独立主节点（5台、3台都可以）
+pool := []*redis.Pool{
+    master1,
+    master2,
+    master3,
+}
+rs := redsync.New(pool)
+
+mutex := rs.NewMutex("lock_key")
+```
+
+
+
+
+
+
+
+
 ## 14周 购物车微服务
+
+
+### 1章 订单和购物车微服务-service
+
+#### 1-1 需求分析
 
 
 ## 15周 支付宝支付，用户操作微服务

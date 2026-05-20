@@ -22,6 +22,8 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"gorm.io/gorm"
 
+	// gorm拼接sql子句的工具包
+
 	"mxshop_srvs/inventory_srv/global"
 	"mxshop_srvs/inventory_srv/proto"
 )
@@ -88,12 +90,16 @@ func (*InventoryServer) Sell(ctx context.Context, req *proto.SellInfo) (*emptypb
 		})
 
 		var inv model.Inventory
-		//if result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(&model.Inventory{Goods:goodInfo.GoodsId}).First(&inv); result.RowsAffected == 0 {
-		//	tx.Rollback() //回滚之前的操作
-		//	return nil, status.Errorf(codes.InvalidArgument, "没有库存信息")
-		//}
+		// 使用 gorm 的 for update 写法实现 MySQL 悲观锁
+		// 在单库单表库存扣减场景下，通常可以直接依赖“事务 + 行级悲观锁”解决并发超卖问题，
+		// 一般不需要再额外加全局互斥锁或 Redis 分布式锁。
+		// 但前提是：查询、判断、更新、提交必须全部放在同一个事务里完成。
+		// if result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(&model.Inventory{Goods: goodInfo.GoodsId}).First(&inv); result.RowsAffected == 0 {
+		// 	tx.Rollback() //回滚之前的操作
+		// 	return nil, status.Errorf(codes.InvalidArgument, "没有库存信息")
+		// }
 
-		//for {
+		// for {  // 无限循环：专门用于乐观锁失败重试的
 		// 创建商品粒度的锁
 		mutex := rs.NewMutex(fmt.Sprintf("goods_%d", goodInfo.GoodsId))
 		if err := mutex.Lock(); err != nil {
@@ -118,15 +124,16 @@ func (*InventoryServer) Sell(ctx context.Context, req *proto.SellInfo) (*emptypb
 		if ok, err := mutex.Unlock(); !ok || err != nil {
 			return nil, status.Errorf(codes.Internal, "释放redis分布式锁异常")
 		}
-		//update inventory set stocks = stocks-1, version=version+1 where goods=goods and version=version
-		//这种写法有瑕疵，为什么？
-		//零值 对于int类型来说 默认值是0 这种会被gorm给忽略掉
+		//原生sql语句：update inventory set stocks = stocks-1, version=version+1 where goods=goods and version=version
+		//这种写法有瑕疵，为什么？ --- 零值问题 Stocks: inv.Stocks这个字段对于int类型来说 默认值是0 这种会被gorm给忽略掉，强制更新零值，必须使用Select语法
+		// version=？这里面的问号也是占位符，后面由变量填充
 		//if result := tx.Model(&model.Inventory{}).Select("Stocks", "Version").Where("goods = ? and version= ?", goodInfo.GoodsId, inv.Version).Updates(model.Inventory{Stocks: inv.Stocks, Version: inv.Version+1}); result.RowsAffected == 0 {
 		//	zap.S().Info("库存扣减失败")
+		//  扣减失败时，退出这个无限循环
 		//}else{
 		//	break
 		//}
-		//}
+		// }
 		//tx.Save(&inv)
 	}
 	sellDetail.Detail = details

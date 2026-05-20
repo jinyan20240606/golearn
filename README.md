@@ -43,7 +43,9 @@
    3. time.Now().Unix() ：获取当前秒级时间戳，返回值：int64
    4. time.Now().UnixMilli() ：获取当前毫秒级时间戳，返回值：int64
    5. time.Now().UnixNano() ：获取当前纳秒级时间戳，返回值：int64
-   6. time.Time：它是一个对象 / 结构体，里面存了：年、月、日、时、分、秒、纳秒、时区……，所有时间操作都靠它
+   6. time.Now().Sub(time.Now()) ：获取当前时间与之前时间的差值时间，返回值：time.Duration
+   7. time.Now().Add(time.Duration(1)) ：获取当前时间加上指定时间间隔的时间，返回值：time.Time
+   8. time.Time：它是一个对象 / 结构体，里面存了：年、月、日、时、分、秒、纳秒、时区……，所有时间操作都靠它
 4. Go JSON库的标签常见语法
    1. 
    ```go
