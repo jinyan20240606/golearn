@@ -1227,7 +1227,39 @@ id	order	goods	goods_name	goods_image	goods_price	nums
 
 #### 1-16 订单服务接口调试2
 
+### 2章 订单和购物车web服务-web-server层
+
+- 新建`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/order-web`目录
+
+#### 2-1 快速启动订单服务
+
+#### 2-2购物车列表页接口
+
+见 `api/shop_cart/shop_cart.go`
+
+#### 2-3 添加商品到购物车接口
+
+见 `api/shop_cart/shop_cart.go`的New方法
+
+#### 2-4 更新和删除购物车记录接口
+
+#### 2-5 订单列表页
+
+#### 2-6 订单详情接口
+
+#### 2-7 新建订单接口
+
 ## 15周 支付宝支付，用户操作微服务
+
+### 1章 支付宝支付
+
+#### 1-1 支付宝沙箱环境开发流程
+
+
+
+
+
+### 2章 收藏，收获地址，留言服务开发
 
 
 ## 16周 用ElasticSearch实现搜索微服务
