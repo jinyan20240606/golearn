@@ -2,27 +2,31 @@ package handler
 
 import (
 	"context"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"mxshop_srvs/userop_srv/model"
+
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"mxshop_srvs/userop_srv/global"
+	"mxshop_srvs/userop_srv/proto"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"mxshop_srvs/userop_srv/proto"
-	"mxshop_srvs/userop_srv/global"
 )
 
+// 查询用户收藏
 func (*UserOpServer) GetFavList(ctx context.Context, req *proto.UserFavRequest) (*proto.UserFavListResponse, error) {
 	var rsp proto.UserFavListResponse
 	var userFavs []model.UserFav
-	var userFavList  []*proto.UserFavResponse
+	var userFavList []*proto.UserFavResponse
 	//查询用户的收藏记录
 	//查询某件商品被哪些用户收藏了
-	result := global.DB.Where(&model.UserFav{User:req.UserId, Goods:req.GoodsId}).Find(&userFavs)
+	// gorm的如果有一个Goods字段不传，则这个where条件只会生效一个User字段
+	result := global.DB.Where(&model.UserFav{User: req.UserId, Goods: req.GoodsId}).Find(&userFavs)
 	rsp.Total = int32(result.RowsAffected)
 
 	for _, userFav := range userFavs {
 		userFavList = append(userFavList, &proto.UserFavResponse{
-			UserId: userFav.User,
+			UserId:  userFav.User,
 			GoodsId: userFav.Goods,
 		})
 	}
@@ -44,7 +48,9 @@ func (*UserOpServer) AddUserFav(ctx context.Context, req *proto.UserFavRequest) 
 }
 
 func (*UserOpServer) DeleteUserFav(ctx context.Context, req *proto.UserFavRequest) (*emptypb.Empty, error) {
-	if result := global.DB.Unscoped().Where("goods=? and user=?", req.GoodsId, req.UserId).Delete(&model.UserFav{}); result.RowsAffected == 0{
+	// 硬删除
+	// 此时软删除有问题，因为有联合索引，下次再新建时，会报重复索引
+	if result := global.DB.Unscoped().Where("goods=? and user=?", req.GoodsId, req.UserId).Delete(&model.UserFav{}); result.RowsAffected == 0 {
 		return nil, status.Errorf(codes.NotFound, "收藏记录不存在")
 	}
 	return &emptypb.Empty{}, nil
@@ -52,11 +58,8 @@ func (*UserOpServer) DeleteUserFav(ctx context.Context, req *proto.UserFavReques
 
 func (*UserOpServer) GetUserFavDetail(ctx context.Context, req *proto.UserFavRequest) (*emptypb.Empty, error) {
 	var userfav model.UserFav
-	if result := global.DB.Where("goods=? and user=?", req.GoodsId, req.UserId).Find(&userfav); result.RowsAffected == 0{
+	if result := global.DB.Where("goods=? and user=?", req.GoodsId, req.UserId).Find(&userfav); result.RowsAffected == 0 {
 		return nil, status.Errorf(codes.NotFound, "收藏记录不存在")
 	}
 	return &emptypb.Empty{}, nil
 }
-
-
-

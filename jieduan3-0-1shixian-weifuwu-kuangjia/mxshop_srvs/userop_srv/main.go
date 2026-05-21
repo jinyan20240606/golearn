@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -34,13 +34,14 @@ func main() {
 
 	flag.Parse()
 	zap.S().Info("ip: ", *IP)
-	if *Port == 0{
+	if *Port == 0 {
 		*Port, _ = utils.GetFreePort()
 	}
 
 	zap.S().Info("port: ", *Port)
 
 	server := grpc.NewServer()
+	// 注册了3个服务
 	proto.RegisterAddressServer(server, &handler.UserOpServer{})
 	proto.RegisterMessageServer(server, &handler.UserOpServer{})
 	proto.RegisterUserFavServer(server, &handler.UserOpServer{})
@@ -74,7 +75,7 @@ func main() {
 	<-quit
 	if err = register_client.DeRegister(serviceId); err != nil {
 		zap.S().Info("注销失败:", err.Error())
-	}else{
+	} else {
 		zap.S().Info("注销成功:")
 	}
 }

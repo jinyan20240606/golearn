@@ -71,6 +71,11 @@
    3. strconv.Atoi("123") // 返回 int, error
    4. strconv.ParseInt("123", 10, 32)
    5. strconv.ParseFloat("3.14", 64)
+   6. strconv.FormatFloat(float64(rsp.Total), 'f', 2, 64) // 将float64 → 转成字符串
+      1. 要转换的浮点数（订单金额）
+      2. 'f' 字符格式只占1个字节：普通小数（不是科学计数法），用字符传，节省内存占用提升性能
+      3. 保留 2 位小数时，默认执行的就是 四舍五入
+      4. // 源数据是 float64
 
 #### 事务和锁
 

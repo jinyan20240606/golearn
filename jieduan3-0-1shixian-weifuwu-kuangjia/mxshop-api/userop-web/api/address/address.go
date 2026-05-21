@@ -2,8 +2,6 @@ package address
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"mxshop-api/userop-web/api"
 	"mxshop-api/userop-web/forms"
 	"mxshop-api/userop-web/global"
@@ -11,6 +9,9 @@ import (
 	"mxshop-api/userop-web/proto"
 	"net/http"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func List(ctx *gin.Context) {
@@ -64,12 +65,12 @@ func New(ctx *gin.Context) {
 
 	userId, _ := ctx.Get("userId")
 	rsp, err := global.AddressClient.CreateAddress(context.Background(), &proto.AddressRequest{
-		UserId: int32(userId.(uint)),
-		Province: addressForm.Province,
-		City: addressForm.City,
-		District: addressForm.District,
-		Address: addressForm.Address,
-		SignerName: addressForm.SignerName,
+		UserId:       int32(userId.(uint)),
+		Province:     addressForm.Province,
+		City:         addressForm.City,
+		District:     addressForm.District,
+		Address:      addressForm.Address,
+		SignerName:   addressForm.SignerName,
 		SignerMobile: addressForm.SignerMobile,
 	})
 
@@ -80,7 +81,7 @@ func New(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"id":rsp.Id,
+		"id": rsp.Id,
 	})
 }
 
@@ -91,6 +92,7 @@ func Delete(ctx *gin.Context) {
 		ctx.Status(http.StatusNotFound)
 		return
 	}
+	//
 	_, err = global.AddressClient.DeleteAddress(context.Background(), &proto.AddressRequest{Id: int32(i)})
 	if err != nil {
 		zap.S().Errorw("删除地址失败")
@@ -99,7 +101,7 @@ func Delete(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"msg":"删除成功",
+		"msg": "删除成功",
 	})
 }
 
@@ -118,12 +120,12 @@ func Update(ctx *gin.Context) {
 	}
 
 	_, err = global.AddressClient.UpdateAddress(context.Background(), &proto.AddressRequest{
-		Id:   int32(i),
-		Province: addressForm.Province,
-		City: addressForm.City,
-		District: addressForm.District,
-		Address: addressForm.Address,
-		SignerName: addressForm.SignerName,
+		Id:           int32(i),
+		Province:     addressForm.Province,
+		City:         addressForm.City,
+		District:     addressForm.District,
+		Address:      addressForm.Address,
+		SignerName:   addressForm.SignerName,
 		SignerMobile: addressForm.SignerMobile,
 	})
 	if err != nil {

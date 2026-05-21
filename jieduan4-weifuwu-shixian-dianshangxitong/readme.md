@@ -1363,9 +1363,361 @@ id	order	goods	goods_name	goods_image	goods_price	nums
    1. 开发测试时需要内网穿透，并且自己要实现一个回调时的路由接口，让支付宝成功对接调用
    2. ![alt text](image-6.png)
 
-#### 1-4 生成支付宝的支付url
+#### 1-4 测试支付宝的回调接口
+
+1. 使用三方库`"github.com/smartwalle/alipay/v3"`sdk包，直接集合封装了常见平台的支付框架写法封装
+2. 测试代码见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/order-web/api/pay`
+3. 这个文件测试的Notofy方法只是测试的是支付宝回调的接口逻辑，不是发起支付请求获取请求url的逻辑
+   1. 回调中必须对调用方进行验签，发起支付请求获取请求url时作为发送方不需要验签
+
+- 支付宝支付中生产环境和测试环境的网关是不一样的
+
+#### 1-5 gin集成支付宝支付
+
+1. 凡是配置我们都拿到nacos中去配置
+2. 然后见订单web服务中集成支付宝：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/order-web/api/order/order.go`的New方法
+3. 订单详情里仍然需要加上支付url的逻辑
+4. 这个支付url是有有效期的，
+   1. 当面付二维码：默认 2 小时，可配置 15 分钟～24 小时
+   2. H5/PC 支付链接：由 timeout_express 控制，1m～15d（常用 30m～2h）
+   3. 超时后：链接失效、订单关闭、无法支付
+5. 生成支付 URL 时传 timeout_express="30m"
+      1. 这是库暴露的参数TimeoutExpress   string                 `json:"timeout_express,omitempty"`   // 该笔订单允许的最晚付款时间，逾期将关闭交易。取值范围：1m～15d。m-分钟，h-小时，d-天，1c-当天（1c-当天的情况下，无论交易何时创建，都在0点关闭）。 该参数数值不接受小数点， 如 1.5h，可转换为 90m。
+      2. TimeExpire       string                 `json:"time_expire,omitempty"`       // 该笔订单绝对超时时间，格式为yyyy-MM-dd HH:mm:ss
+   1. 支付宝返回的 URL 有效期≈30 分钟
+   2. 你数据库存 pay_url + expire_at=now+30m
+   3. 用户进来先判断是否过期 → 过期就重新下单拿新 URL
+
+#### 1-6 支付宝回调通知url回调接口
+
+见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/order-web/api/pay` 接口
 
 ### 2章 收藏，收获地址，留言服务开发
 
+#### 2-1 需求分析
+
+- 在页面的个人中心模块：还有以下功能
+  - 收获地址也是单表的增删改查的过程
+    - 不会涉及其他表的关联
+  - 留言服务
+    - 也是单表的增删改查，会用到oss的图片上传
+  - 收藏
+    - 功能稍微复杂一点，比单表增删改查稍微复杂一点
+- 整体不难多，我们把它写到一个微服务叫用户操作微服务中，大概涉及3个实体表： 收货地址，留言，收藏
+
+#### 2-2 定义用户操作服务的表结构
+
+> 新建grpc微服务目录`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/userop_srv`
+
+1. 表结构设计：`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/userop_srv/model/userop.go`
+   1. leavingmessages：用户留言表
+   2. address：用户收货地址表
+   3. userfav：用户商品收藏表
+   4. 三个表之间没有外键关联，都是通过 user_id 关联到用户表，属于业务关联
+2. 表关系
+   1. User → 关联用户表：用户 -> 留言（一对多）
+   2. Goods → 关联商品表：用户 -> 地址（一对多）
+   3. UserFav -> 用户与商品是多对多关系（一个用户收藏多个商品，一个商品被多个用户收藏）
+```sql
+--- leavingmessages（用户留言表）
+INSERT INTO leavingmessages (id, created_at, updated_at, deleted_at, user, message_type, subject, message, file)
+VALUES 
+(1, NOW(), NOW(), NULL, 100, 1, '订单包装很好', '商品包装很严实，没有破损', ''),
+(2, NOW(), NOW(), NULL, 100, 2, '水果变质投诉', '收到的草莓有一半是烂的，非常不满意', 'https://img.xxx.com/complaint.jpg'),
+(3, NOW(), NOW(), NULL, 101, 3, '什么时候发货', '下单后多久能发货？发什么快递？', ''),
+(4, NOW(), NOW(), NULL, 102, 4, '申请退货退款', '商品和描述不符，需要退货', ''),
+(5, NOW(), NOW(), NULL, 103, 5, '求购野生菌菇', '长期求购野生菌菇，价格好谈', '');
+```
+
+---
+
+```sql
+--- 二、address（用户收货地址表）
+INSERT INTO address (id, created_at, updated_at, deleted_at, user, province, city, district, address, signer_name, signer_mobile)
+VALUES 
+(1, NOW(), NOW(), NULL, 100, '广东省', '深圳市', '南山区', '科技园南区100号', '张三', '13812345678'),
+(2, NOW(), NOW(), NULL, 100, '北京市', '北京市', '朝阳区', '望京街道10号', '张三', '13812345678'),
+(3, NOW(), NOW(), NULL, 101, '上海市', '上海市', '浦东新区', '张江高科技园区', '李四', '13987654321'),
+(4, NOW(), NOW(), NULL, 102, '浙江省', '杭州市', '西湖区', '西溪湿地公园附近', '王五', '13711112222');
+```
+
+---
+
+```sql
+--- 三、userfav（用户收藏表）
+INSERT INTO userfav (id, created_at, updated_at, deleted_at, user, goods)
+VALUES 
+(1, NOW(), NOW(), NULL, 100, 1001),
+(2, NOW(), NOW(), NULL, 100, 1002),
+(3, NOW(), NOW(), NULL, 101, 1001),
+(4, NOW(), NOW(), NULL, 102, 1003),
+(5, NOW(), NOW(), NULL, 103, 1001);
+```
+
+---
+
+
+
+- jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/userop_srv/model/main/main.go生成数据库和表
+
+
+#### 2-3 完成proto定义
+
+1. jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/userop_srv/proto/message.proto
+
+#### 2-4 启动服务
+
+- main中注册需要注册3个server，2参handler可以都是一样的，1参都是server
+
+#### 2-5 完成handler
+
+- 重点注意
+  - handler中将不同类的server模块化用法：使用一个base中的结构体，其他分类目录直接使用
+  - 完成删除收藏接口中，`func (*UserOpServer) DeleteUserFav(ctx context.Context, req *proto.UserFavRequest) (*emptypb.Empty, error) {`
+    - 必须硬删除，此时软删除有问题，因为有联合索引，下次再新建时，会报重复索引
+- 都写完后，然后jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/userop_srv/tests/userop.go 进行测试
+
+
+#### 2-6 完成web-server层功能
+
+- 新建`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/userop-web`
+
+#### 2-7 gin层的api源码解读
+
+- 完成grpc服务端链接：jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/userop-web/initialize/srv_conn.go
+- 重点看了`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/userop-web/api/message/message.go`的List方法
+
+#### 2-8 通过yapi测试接口
+
+略
 
 ## 16周 用ElasticSearch实现搜索微服务
+
+### 1章 ElasticSearch常用接口
+
+#### 1-1 我们为什么用ES搜索
+
+- 我们之前进行商品搜索是用的mysql的常用搜索
+  - 精确搜索：`SELECT * FROM leavingmessages WHERE user = 100;`
+    - 优点：最快、走索引适用：精确查询
+  - 模糊搜索LIKE
+    - -- 包含“水果”：SELECT * FROM leavingmessages WHERE subject LIKE '%水果%';
+    - -- 以“山东”开头：SELECT * FROM address WHERE province LIKE '山东%';
+    - -- 以“小区”结尾：SELECT * FROM address WHERE address LIKE '%小区';
+    - %关键词% 最慢（无法用索引），关键词% 最快（能走索引）
+  - 范围搜索（BETWEEN / > < >= <=）
+    - -- 时间范围：SELECT * FROM leavingmessages WHERE created_at BETWEEN '2025-01-01' AND '2025-02-01';
+    - -- ID大于：SELECT * FROM address WHERE id > 10;
+  - 多条件组合搜索（AND / OR）
+    - - 用户100 并且 类型是投诉：SELECT * FROM leavingmessages WHERE user=100 AND message_type=2;
+    - -- 标题包含水果 或 内容包含坏了：SELECT * FROM leavingmessages WHERE subject LIKE '%水果%' OR message LIKE '%坏了%';
+
+1. mysql默认的搜索面临的问题
+   1. 性能低下
+   2. 没有相关性排名
+      1. LIKE模糊搜索没有搜索引擎那种相关性排名
+   3. 无法全文搜索
+   4. 搜索不准确·没有分词，就是简单的正则匹配
+
+##### 什么是全文搜索
+1. 我们生活中的数据总体分为两种:结构化数据和非结构化数据。
+   1. 结构化数据:指具有固定格式或有限长度的数据，如数据库，元数据等。
+   2. 非结构化数据:指不定长或无固定格式的数据，如邮件，word文档，简历等。非结构化数据又一种叫法叫全文数据。
+2. 按照数据的分类，搜索也分为两种:
+   1. 对结构化数据的搜索:如对数据库的搜索，用SQL语句。再如对元数据的搜索，如利用windows搜索对文件名，类型，修改时间进行搜索等，
+   2. 对非结构化数据的搜索:如利用windows的搜索也可以搜索文件内容，Linux下的grep命令，再如用Google和百度可以搜索大量内容数据 ---- 对**全文数据非结构化数据也即对全文数据的搜索主要有两种方法:**
+
+##### 什么是ES
+   3. Elasticsearch是一个**分布式可扩展**的实时搜索和分析引擎,一个建立在全文搜索引擎Apache Lucene(TM)基础上的搜索引擎.当然Elasticsearch并不仅仅是Lucene那么简单，它不仅包括了**全文搜索功能**，还可以进行以下工作
+   4. **分布式**实时文件存储，并将每一个字段都编入索引，使其可以被搜索。
+   5. 实时分析的分布式搜索引擎。
+   6. 可以扩展到上百台服务器，处理PB级别的结构化或非结构化数据。
+   7. ES的适用场景
+      1. 维基百科
+      2. The Guardian,新闻
+      3. · Stack Overflow
+      4. ·Github
+      5. 电商网站、检索商品    -------- 最常用
+      6. 日志数据分析、logstash采集日志、 ------ 最常用
+      7. Es进行复杂的数据分析(ELK)商品价格监控网站、用户设定价格阈值 ------- 最常用
+
+#### 1-2 安装ES和kibana
+
+1. ES工具本身
+2. kibana是ES的GUI管理操作工具，相当于mysql的navicat
+
+
+1. 开发环境下关闭和禁用防火墙，生产环境下必须针对性放行端口号才安全
+   1. 有时候安装了软件后，端口访问不了，有时候就是防火墙引起的
+   2. `systemctl stop firewalld`当前立刻停用，重启服务器失效
+   3. `systemctl disable firewalld`永久禁用开机自启，开机不再自动启动防火墙, 服务器内网使用、无需防护
+   4. `systemctl status firewalld	`查看防火墙状态，看运行 / 关闭、是否开机启动
+   5. `systemctl enable firewalld`开启开机自启,重启服务器自动启动防火墙,线上生产环境必开
+   6. `systemctl start firewalld`临时启动防火墙
+   7. 生产正确做法（不建议直接关防火墙）放行指定端口，而非关闭防火墙
+      1. firewall-cmd --permanent --add-port=8080/tcp   # 放行8080端口
+      2. firewall-cmd --reload # 重载生效
+2. 通过docker安装ES
+```shell
+# 新建esconfig配置文件夹：放 ES 配置文件
+# -p：自动创建父目录，不用一层一层建
+mkdir -p /data/elasticsearch/config
+# 新建es的data目录：放 ES 数据（存你的搜索数据）
+mkdir -p /data/elasticsearch/data
+# 新建es的plugins目录：放 ES 插件（IK 分词器、拼音插件）
+mkdir -p /data/elasticsearch/plugins
+# 给目录设置权限：给整个目录赋予最高权限开放读 / 写 / 执行权限，递归给所有子目录、子文件一起赋权
+chmod 777 elasticsearch:elasticsearch /data/elasticsearch
+
+# 写入配置到elasticsearch.yml中：允许任何 IP 访问 ES
+echo "http.host: 0.0.0.0" >> /data/elasticsearch/config/elasticsearch.yml
+
+# 安装es
+# plugins：放 ES 插件（IK 分词器、拼音插件）
+# -d 后台运行（不占用终端）
+# -p 端口映射
+# 给容器起名字叫 es，方便管理
+# 开机自启 + 崩溃自动重启
+# 宿主机 9200 → 容器 9200，HTTP 访问端口（项目 / 浏览器连接用）
+# TCP 通信端口，集群通信（单节点不用，但习惯加上）
+# 环境变量 -e
+# "discovery.type=single-node" 单节点运行（开发环境必须加，否则 ES 会尝试集群启动）
+# 设置 ES 内存：-Xms512m 初始内存 512M，-Xmx512m 最大内存 512M，防止把服务器内存吃爆
+# 目录挂载 -v（数据持久化）
+docker run -d \ 
+  --name es \
+  --restart always \
+  -p 9200:9200 \
+  -p 9300:9300 \
+  -e "discovery.type=single-node" \
+  -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
+  -v /data/elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml \
+  -v /data/elasticsearch/data:/usr/share/elasticsearch/data \
+  -v /data/elasticsearch/plugins:/usr/share/elasticsearch/plugins \
+  docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+
+# 测试是否安装成功
+curl http://localhost:9200
+# 出现以下信息就成功
+# {
+#   "name" : "a92b3c...",
+#   "cluster_name" : "docker-cluster",
+#   "version" : {
+#     "number" : "7.17.0"
+#   },
+#   "tagline" : "You Know, for Search"
+# }
+```
+3. 通过docker安装Kibana
+```shell
+# Kibana 版本必须和 ES 完全一致,你 ES 是：7.17.0所以 Kibana 也必须用：7.17.0
+docker run -d \
+  --name kibana \
+  --restart=always \
+  -p 5601:5601 \
+  -e "ELASTICSEARCH_HOSTS=http://172.17.0.3:9200" \
+  docker.elastic.co/kibana/kibana:7.17.0
+
+#--name kibana        # 容器名字
+#--restart=always     # 开机自启
+#-p 5601:5601         # 端口映射：本地5601 → 容器5601
+#-e "ES地址=http://你的ESIP:9200"  # 告诉Kibana去哪里连ES,一定要改成自己所在的虚拟机ip地址，不能写120.0.0.1
+
+# 防火墙放行 5601 端口（必须）
+firewall-cmd --permanent --add-port=5601/tcp
+firewall-cmd --reload
+
+# 访问 Kibana 可视化界面
+curl http://你的服务器IP:5601
+```
+
+- kibana使用博客教程参考：https://juejin.cn/post/7066673338604584973#heading-3
+
+
+#### 1-3 ES中的基本概念
+
+1. es中的type，index，mapping，dsl
+| Elasticsearch | MySQL 对应概念 | 通俗解释 |
+| ---- | ---- | ---- |
+| **索引 Index** | 数据库 `Database`或表 `Table` | 存放一批同类数据的仓库，比如 `goods_index` 商品库、`msg_index`留言库，7版本后对应Table表了，废弃Database库概念了 |
+| **类型 Type** | 数据表 `Table` | 7.x版本后废弃，现在一个索引只存一种结构数据,相当于一个索引就对应一个数据表 |
+| **文档 Document** | 数据行 `row` | 单条真实数据，JSON格式，对应MySQL一行记录 |
+| **字段 Field** | 列 `column` | 文档里的单个属性，如id、title、content |
+| **映射 Mapping** | 表结构 `建表语句` | 定义字段类型、分词规则、是否索引，等同于约束+字段定义 |
+| **DSL（Domain Specific Language）** | SQL查询语句 | ES查询语言，类似SQL查询，但不是SQL，语法不一样 |
+| **分片 Shard** | 分库分表 | 数据拆分存储，提升容量与查询速度 |
+| **副本 Replica** | 主从备份 | 数据备份节点，防止宕机丢数据 |
+| **倒排索引** | 普通B+树索引 | ES核心检索结构，专门做全文模糊搜索 |
+
+---
+
+1. 索引 Index = MySQL 数据表
+- MySQL：创建数据库表 `CREATE TABLE goods {}`
+- ES：创建索引 `shop_goods`
+- 用途：**归类业务数据**，商品、留言、订单分开建索引
+- 一般谈索引时，动词的话就是创建一个索引即一个表，名词就是这个在这个索引中
+
+2. 文档 Document = MySQL 一行数据
+- MySQL 一行表数据
+```sql
+id:1,title:"华为手机",price:3999
+```
+- ES 一条文档（JSON）
+```json
+{"id":1,"title":"华为手机","price":3999}
+```
+**ES没有固定表字段，结构灵活**
+
+3. 字段 Field = MySQL 字段列
+- MySQL：`title varchar(100)`
+- ES：`title` 字段，可设置分词、不分词、数值、日期
+
+4. 映射 Mapping = MySQL 表结构
+- MySQL：提前定义字段名、类型、长度
+- ES Mapping：定义字段类型、**是否分词、是否参与搜索**
+  - text：可分词搜索（商品标题、内容）
+  - keyword：精确匹配（分类、状态、手机号）
+  - integer、date：数值时间
+
+5. ES 查询 ≈ MySQL 查询对照
+   1. **精准查询**
+      1. MySQL：`where id=1`
+      2. ES：term 精确匹配
+   2. **模糊搜索**
+      1. MySQL：`like "%手机%"`（慢）
+      2. ES：match 分词检索（快）
+   3. **分页查询**
+      1. MySQL：`limit 0,10`
+      2. ES：from + size 分页
+   4. **条件筛选**
+      1. MySQL：`where price>100`
+      2. ES：range 范围查询
+
+6. 集群、分片、副本（极简理解）
+- **主分片**：拆分大数据，提升查询并发
+- **副本分片**：数据备份，一台挂了另一台顶上
+- 单节点开发环境：1主0副本即可
+
+7. 最核心区别
+   1. **MySQL**
+      1. 擅长：事务、增删改、关联查询、数据存储
+      2. 弱项：全文模糊搜索、大数据检索慢
+   2. **ES**
+      1. 擅长：**全文检索、分词搜索、海量数据快速查询**
+      2. 弱项：不适合高频事务、复杂联表
+
+8. 项目实战对应（你的商城）
+- MySQL：存用户、地址、收藏、订单、商品**原始数据**
+- ES：单独建立 **商品索引、留言索引**
+- 用户搜索商品 → 请求ES
+- 后台增改商品 → 同步更新ES文档
+
+9. 一句话记忆
+**存数据用MySQL，搜数据用ES**
+**索引=库，文档=行，字段=列，映射=表结构**
+
+
+### 2章 将ElasticSearch集成到项目中
+
+
+### 3章 前后端联调

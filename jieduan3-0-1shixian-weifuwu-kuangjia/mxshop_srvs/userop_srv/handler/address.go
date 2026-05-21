@@ -2,38 +2,38 @@ package handler
 
 import (
 	"context"
+	"mxshop_srvs/userop_srv/global"
+	"mxshop_srvs/userop_srv/model"
+	"mxshop_srvs/userop_srv/proto"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"mxshop_srvs/userop_srv/model"
-	"mxshop_srvs/userop_srv/proto"
-	"mxshop_srvs/userop_srv/global"
 )
-
 
 func (*UserOpServer) GetAddressList(ctx context.Context, req *proto.AddressRequest) (*proto.AddressListResponse, error) {
 	var addresses []model.Address
 	var rsp proto.AddressListResponse
 	var addressResponse []*proto.AddressResponse
 
-	if result := global.DB.Where(&model.Address{User:req.UserId}).Find(&addresses); result.RowsAffected != 0 {
+	if result := global.DB.Where(&model.Address{User: req.UserId}).Find(&addresses); result.RowsAffected != 0 {
 		rsp.Total = int32(result.RowsAffected)
 	}
 
 	for _, address := range addresses {
 		addressResponse = append(addressResponse, &proto.AddressResponse{
-			Id: address.ID,
-			UserId: address.User,
-			Province: address.Province,
-			City: address.City,
-			District: address.District,
-			Address:  address.Address,
-			SignerName: address.SignerName,
-			SignerMobile:address.SignerMobile,
+			Id:           address.ID,
+			UserId:       address.User,
+			Province:     address.Province,
+			City:         address.City,
+			District:     address.District,
+			Address:      address.Address,
+			SignerName:   address.SignerName,
+			SignerMobile: address.SignerMobile,
 		})
 	}
 	rsp.Data = addressResponse
-
+	// 返回指针地址
 	return &rsp, nil
 }
 
@@ -50,11 +50,12 @@ func (*UserOpServer) CreateAddress(ctx context.Context, req *proto.AddressReques
 
 	global.DB.Save(&address)
 
-	return &proto.AddressResponse{Id:address.ID}, nil
+	return &proto.AddressResponse{Id: address.ID}, nil
 }
 
 func (*UserOpServer) DeleteAddress(ctx context.Context, req *proto.AddressRequest) (*emptypb.Empty, error) {
-	if result := global.DB.Where("id=? and user=?", req.Id, req.UserId).Delete(&model.Address{}); result.RowsAffected == 0{
+	// 软删除
+	if result := global.DB.Where("id=? and user=?", req.Id, req.UserId).Delete(&model.Address{}); result.RowsAffected == 0 {
 		return nil, status.Errorf(codes.NotFound, "收货地址不存在")
 	}
 	return &emptypb.Empty{}, nil
@@ -95,4 +96,3 @@ func (*UserOpServer) UpdateAddress(ctx context.Context, req *proto.AddressReques
 
 	return &emptypb.Empty{}, nil
 }
-

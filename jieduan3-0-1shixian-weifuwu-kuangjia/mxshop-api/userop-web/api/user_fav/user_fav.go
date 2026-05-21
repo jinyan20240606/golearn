@@ -2,20 +2,22 @@ package user_fav
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"mxshop-api/userop-web/api"
 	"mxshop-api/userop-web/forms"
 	"mxshop-api/userop-web/global"
 	"mxshop-api/userop-web/proto"
 	"net/http"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
+// 获取收藏列表
 func List(ctx *gin.Context) {
 	userId, _ := ctx.Get("userId")
 	userFavRsp, err := global.UserFavClient.GetFavList(context.Background(), &proto.UserFavRequest{
-		UserId:  int32(userId.(uint)),
+		UserId: int32(userId.(uint)),
 	})
 	if err != nil {
 		zap.S().Errorw("获取收藏列表失败")
@@ -24,13 +26,13 @@ func List(ctx *gin.Context) {
 	}
 
 	ids := make([]int32, 0)
-	for _, item := range userFavRsp.Data{
+	for _, item := range userFavRsp.Data {
 		ids = append(ids, item.GoodsId)
 	}
 
 	if len(ids) == 0 {
 		ctx.JSON(http.StatusOK, gin.H{
-			"total":0,
+			"total": 0,
 		})
 		return
 	}
@@ -50,9 +52,9 @@ func List(ctx *gin.Context) {
 	}
 
 	goodsList := make([]interface{}, 0)
-	for _, item := range userFavRsp.Data{
+	for _, item := range userFavRsp.Data {
 		data := gin.H{
-			"id":item.GoodsId,
+			"id": item.GoodsId,
 		}
 
 		for _, good := range goods.Data {
@@ -111,7 +113,7 @@ func Delete(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"msg":"删除成功",
+		"msg": "删除成功",
 	})
 }
 
@@ -133,5 +135,6 @@ func Detail(ctx *gin.Context) {
 		return
 	}
 
+	// 成功时不想返回任何数据，直接返回状态就可以了
 	ctx.Status(http.StatusOK)
 }
