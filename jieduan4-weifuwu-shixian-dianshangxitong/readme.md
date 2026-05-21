@@ -1649,6 +1649,8 @@ curl http://你的服务器IP:5601
 | **副本 Replica** | 主从备份 | 数据备份节点，防止宕机丢数据 |
 | **倒排索引** | 普通B+树索引 | ES核心检索结构，专门做全文模糊搜索 |
 
+
+- es中没有数据库的概念，最大单位就是索引即表了
 ---
 
 1. 索引 Index = MySQL 数据表
@@ -1662,7 +1664,7 @@ curl http://你的服务器IP:5601
 ```sql
 id:1,title:"华为手机",price:3999
 ```
-- ES 一条文档（JSON）
+- ES 一条文档（JSON），**操作语句指定的id就是文档的id即row某一行记录**
 ```json
 {"id":1,"title":"华为手机","price":3999}
 ```
@@ -1679,26 +1681,12 @@ id:1,title:"华为手机",price:3999
   - keyword：精确匹配（分类、状态、手机号）
   - integer、date：数值时间
 
-5. ES 查询 ≈ MySQL 查询对照
-   1. **精准查询**
-      1. MySQL：`where id=1`
-      2. ES：term 精确匹配
-   2. **模糊搜索**
-      1. MySQL：`like "%手机%"`（慢）
-      2. ES：match 分词检索（快）
-   3. **分页查询**
-      1. MySQL：`limit 0,10`
-      2. ES：from + size 分页
-   4. **条件筛选**
-      1. MySQL：`where price>100`
-      2. ES：range 范围查询
-
-6. 集群、分片、副本（极简理解）
+1. 集群、分片、副本（极简理解）
 - **主分片**：拆分大数据，提升查询并发
 - **副本分片**：数据备份，一台挂了另一台顶上
 - 单节点开发环境：1主0副本即可
 
-7. 最核心区别
+1. 最核心区别
    1. **MySQL**
       1. 擅长：事务、增删改、关联查询、数据存储
       2. 弱项：全文模糊搜索、大数据检索慢
@@ -1706,16 +1694,335 @@ id:1,title:"华为手机",price:3999
       1. 擅长：**全文检索、分词搜索、海量数据快速查询**
       2. 弱项：不适合高频事务、复杂联表
 
-8. 项目实战对应（你的商城）
+2. 项目实战对应（你的商城）
 - MySQL：存用户、地址、收藏、订单、商品**原始数据**
 - ES：单独建立 **商品索引、留言索引**
 - 用户搜索商品 → 请求ES
 - 后台增改商品 → 同步更新ES文档
 
-9. 一句话记忆
+1. 一句话记忆
 **存数据用MySQL，搜数据用ES**
 **索引=库，文档=行，字段=列，映射=表结构**
 
+
+
+#### 1-4 通过put和post方法添加一个数据&ES零基础常用业务命令
+
+- es的操作是restful风格的操作接口
+  - 使用postman方式也能操作
+  - 我们一般可以直接在kibana中提供的DevTools控制台面板中，执行语句指令
+    - 官方规范：方法名大写（GET, POST, PUT, DELETE），都使用大写方法名
+    - GET     查询
+    - POST    添加 / 复杂查询
+    - PUT     修改 / 创建索引
+    - DELETE  删除
+
+```js
+// 1、查看ES中所有的索引index
+GET _cat/indices
+
+// 2、查询这个索引下的所有数据
+GET /索引名/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+// 3、添加一个数据
+
+```
+--------
+
+#### 1-5 常用语句
+对照MySQL，Kibana控制台直接复制执行，方法统一大写
+
+一、基础查看
+1. 查看全部索引（库/表）
+```
+GET _cat/indices
+```
+
+2. 查看索引结构（表字段）
+```
+GET /索引名/_mapping
+```
+
+3. 查看account索引名的整体信息
+   1. `GET /account` 查看该索引整体信息
+
+二、查询操作
+
+一般使用body体查询，很少使用URI查询
+
+1. 查询索引表全部数据
+等价 `SELECT * FROM 表`
+```js
+GET /msg_index/_search
+{
+  "query": {
+    "match_all": {} // 固定写法
+  }
+}
+// 或直接--没有 query → 自动帮你执行 match_all 查询所有数据
+GET /msg_index/_search
+```
+
+1. 根据ID查单条数据
+等价 `SELECT * FROM 表 WHERE id=1`
+```js
+// 01- 获取
+GET /msg_index/_doc/1
+
+// 结果，具体的值放在结果的source字段里
+{
+  "_index": "msg_index",
+  "_id": "1",
+  "_version": 1,
+  "_seq_no": 0,
+  "_primary_term": 1,
+  "_source": {
+    "user_id": 100,
+    "subject": "售后投诉",
+    "message": "货品破损"
+  }
+}
+
+// 02- 只拿 _source 里的真实业务数据
+GET /msg_index/_source/1
+```
+
+1. 分页查询
+from起始下标，size每页条数
+```js
+GET /msg_index/_search
+{
+  "from": 0,
+  "size": 10,
+  "query": {
+    "match_all": {}
+  }
+}
+```
+
+1. 模糊分词搜索（text字段）
+等价 `LIKE '%关键词%'`
+```js
+GET /msg_index/_search
+{
+  "query": {
+    "match": {
+      "message": "投诉"
+    }
+  }
+}
+```
+
+1. 精确匹配搜索（keyword/数值）
+等价 `WHERE 字段=值`
+```js
+GET /msg_index/_search
+{
+  "query": {
+    "term": {
+      "message_type": 2
+    }
+  }
+}
+```
+
+1. 多条件同时满足
+等价 `AND`
+```js
+GET /msg_index/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        {"match": {"subject":"商品"}},
+        {"term": {"user_id":100}}
+      ]
+    }
+  }
+}
+```
+
+1. URI查询: 固定语法 `GET /索引名/_search?q=字段名:值`
+```js
+// subject 字段 包含 “投诉”= like '%投诉%'
+GET /msg_index/_search?q=subject:投诉
+
+// 查询所有
+GET /msg_index/_search?q=*
+
+// 精确匹配（字段 = 值）
+GET /msg_index/_search?q=user_id:100
+
+// 多个条件 AND（并且）
+GET /msg_index/_search?q=subject:投诉 AND user_id:100
+
+// 分页
+GET /msg_index/_search?q=*&from=0&size=10
+
+// 排序
+GET /msg_index/_search?q=*&sort=user_id:desc
+```
+
+三、新增数据
+```js
+// post的方法后面不用写id会自动生成，_doc是固定写法：能更新数据也能新增数据
+// post带id操作，第一次运行是created，第二次就是uodated，---- 与PUT 差不多一样，只不过PUT必须写id
+POST /msg_index/_doc
+{
+  "user_id": 100,
+  "message_type": 1,
+  "subject": "物流咨询",
+  "message": "多久到货"
+}
+
+// 这种使用关键字_create：如果数据id存在，会报错，不允许updated
+PUT /msg_index/_create/1
+{
+  "user_id": 100,
+  "subject": "测试新增"
+}
+```
+
+四、修改数据--全覆盖
+
+1. 指定文档ID全覆盖修改
+```js
+// 如果msg_index索引不存在，会自动创建，_doc是固定写法， 后面的1是指定的id，回车下面直接写json串
+PUT /msg_index/_doc/1
+{
+  "user_id": 100,
+  "message_type": 2,
+  "subject": "售后投诉",
+  "message": "货品破损"
+}
+
+// 返回结果
+{
+  "_index" : "msg_index",// 数据放在哪个 ** 索引（库）** 里
+  "_id" : "1", // 这条数据的 唯一 ID
+  "_version" : 1, // 版本号，第一次创建 = 1，修改一次 = 2，再修改 = 3，作用：记录修改了几次
+  "result" : "created",// 你第一次执行 → created你再执行一次 → updated
+  "_shards" : { // 分片信息，分布式用
+    "total" : 1,
+    "successful" : 1,
+    "failed" : 0
+  },
+
+  // 新版乐观锁：_seq_no + _primary_term，防止多人同时改同一条数据！
+  // 老版乐观锁：_version，_version 有个小缺点：，删除数据后再重建，版本会重置为 1，容易出现版本错乱
+  "_seq_no" : 0,// 数据修改次数即版本号（永远递增，不会乱）
+  "_primary_term" : 1// 所在节点编号
+}
+```
+
+五、删除数据
+
+1. 根据ID删除单条
+```js
+DELETE /msg_index/_doc/1
+```
+2. 删除整个索引（谨慎使用）
+```js
+DELETE /msg_index
+```
+
+- 查询语句是ES中的重中之重！！！
+
+#### 1-6 通过es更新数据的坑
+
+1. post和put更新数据的坑是，会全部替换，不会增量更新，必须用_update，
+   1. `PUT /_doc/1 = 全量替换（会丢数据！）`，你只传 1 个字段，其他字段全部消失
+   2. `POST /_update/1 = 局部更新（不会丢数据！）`，你只改要改的字段，其他字段原样保留
+   3. 这种更新方法，如果值一样，它也会做更新操作
+      1. 版本号 _version +1，seq_no +1，都会算一次修改操作
+   4. 解决坑使用update方法，这个方法如果更新的值一样，则会什么都不做
+      1. 如果新旧值完全一样 → ES 什么都不做！，不执行修改，版本号不变，性能更好，不会触发多余的日志 / 同步
+        ```js
+        // update更新数据
+        POST /msg_index/_update/1
+        {
+          "doc": {
+            "subject": "这个标题我改了"
+          }
+        }
+        // 结果：其他字段都在！不会丢！
+        {
+          "user_id": 100,       // 还在
+          "subject": "这个标题我改了",  // 已改
+          "message": "货品破损"  // 还在！
+        }
+        ```
+2. 删除数据和索引
+   1. 见1-5的方法介绍的第五部分
+
+
+#### 1-7 通过bulk和mget批量操作数据
+
+- bulk（批量增删改）
+  - 特点：
+    - 一次请求，执行 N 个操作
+    - 增、删、改、写在一起！
+    - 比一条条执行快 10～100 倍
+  - bulk 语法规则：
+    - 一行指令，一行数据
+    - 不能换行、不能格式化错
+    - 最后一行必须回车
+  ```js
+  POST /_bulk
+  // index = 新增 / 覆盖, 下一行是数据
+  {"index": {"_index":"msg_index", "_id": "10"}}
+  {"user_id":10, "subject":"批量新增1"}
+  // update = 局部更新, 下一行是 {doc: {}}
+  {"update": {"_index":"msg_index", "_id": "1"}}
+  {"doc": {"subject":"批量修改"}}
+  // delete = 删除
+  {"delete": {"_index":"msg_index", "_id": "2"}}
+  ```
+- mget（批量查）
+  - 一次根据多个 ID 查多条数据= MySQL 的 WHERE id IN (1,2,3)
+  ```js
+    GET /索引/_mget
+    {
+      "ids": [1, 2, 3]
+    }
+    // 一次性返回 id=1、2、3 的三条数据
+  ```
+  - 批量跨索引查询
+  ```js
+  GET /_mget // 这块可以省去索引名
+  {
+    "docs": [
+      { "_index": "msg_index", "_id": 1 },
+      { "_index": "user_index", "_id": 100 },
+      { "_index": "order_index", "_id": 1001 }
+    ]
+  }
+  ```
+  - 批量查，但 不要元数据，只要真实内容只查 source
+  ```js
+  GET /msg_index/_source/_mget
+  {
+    "ids": [1,2,3]
+  }
+  //返回干净的业务数据，没有 _index _version 等
+  ``` 
+  - bulk风格：可以指定返回哪些字段✅ 非常节省流量
+  ```js
+  GET /_mget
+  {
+    "docs": [
+      { "_index": "msg_index", "_id": 1, "_source": ["subject", "user_id"] },
+      { "_index": "msg_index", "_id": 2, "_source": "message" }
+    ]
+  }
+  ```
+
+- 细节注意
+  - 批量操作里面的每个操作是独立的，第一个失败了，第二个成功，照样会执行，不像mysql事务那样。
 
 ### 2章 将ElasticSearch集成到项目中
 
