@@ -1733,7 +1733,6 @@ GET /索引名/_search
     "match_all": {}
   }
 }
-// 3、添加一个数据
 
 ```
 --------
@@ -1754,6 +1753,20 @@ GET /索引名/_mapping
 
 3. 查看account索引名的整体信息
    1. `GET /account` 查看该索引整体信息
+
+4. 手动创建索引
+```js
+PUT /my_index
+{
+  "mappings": {
+    "properties": {
+      "title":  { "type": "text" },
+      "author": { "type": "keyword" },
+      "age":    { "type": "integer" }
+    }
+  }
+}
+```
 
 二、查询操作
 
@@ -1858,22 +1871,6 @@ GET /msg_index/_search
 }
 ```
 
-1. 多条件同时满足
-等价 `AND`
-```js
-GET /msg_index/_search
-{
-  "query": {
-    "bool": {
-      "must": [
-        {"match": {"subject":"商品"}},
-        {"term": {"user_id":100}}
-      ]
-    }
-  }
-}
-```
-
 1. URI查询: 固定语法 `GET /索引名/_search?q=字段名:值`
 ```js
 // subject 字段 包含 “投诉”= like '%投诉%'
@@ -1898,6 +1895,12 @@ GET /msg_index/_search?q=*&sort=user_id:desc
 三、新增数据
 ```js
 // post的方法后面不用写id会自动生成，_doc是固定写法：能更新数据也能新增数据
+// ES 会自动做 3 件事：
+          // 1-自动创建索引 my_index
+          // 2-自动猜字段类型
+                // title → text + keyword
+                // age → integer
+          // 3-自动生成 mapping
 // post带id操作，第一次运行是created，第二次就是uodated，---- 与PUT 差不多一样，只不过PUT必须写id
 POST /msg_index/_doc
 {
@@ -2085,28 +2088,59 @@ query dsl查询
 |实惠|3|
 
 二、存储核心流程
-1. **分词**
-按字段配置分词器拆分，仅 text 类型字段 分词，keyword、数值型不拆分；同时过滤停用词、标点、特殊符号。
-例：`小米手机好用` → 拆分：小米、手机、好用
+1. **分析器-分词**
+分析器内部完整执行：字符过滤器 → 分词器 → 令牌过滤器，
 
-2. **规整归一**
+分析器analyzer的工作，由3部分组成：
+  - Character Filters 字符过滤器
+    - 作用：处理原始文本字符，增删、替换、清洗字符
+    - 数量：一个分析器可配置0~ 多个，按顺序依次执行
+    - 常见操作：剔除 HTML 标签、特殊符号替换、字符规整
+  - Tokenizer 分词器
+    - 作用：把处理后的字符流切割为独立词条，记录词条位置、偏移量
+    - 数量：一个分析器有且仅有 1 个
+    - 示例：Quick brown fox 切分为 [Quick, brown, fox]，对于英文空格规则分还是比较简单的，对于中文，需要考虑中文分词根本就没有空格是最难的
+  - Token Filters 令牌过滤器
+    - 作用：对拆分好的词条二次加工，增删、改写词条
+    - 常用类型
+      - 小写转换：英文统一转小写
+      - 停用词过滤：剔除无意义虚词
+      - 同义词扩充：追加同义词条
+- - es内部内置了不同类型的分析器：
+    - Standard Analyzer 默认分词器，按语义分词，自动转小写
+    - Simple Analyzer 非字母处切割，过滤符号，统一小写
+    - Stop Analyzer 小写转换 + 过滤英文停用词
+    - Whitespace Analyzer 仅按空格切割，不转小写
+    - Keyword Analyzer 无拆分，整串作为单个词条
+    - Pattern Analyzer 正则表达式规则分词
+    - Language Analyzer 多语种专属分词器
+    ```js
+    // 内置分析器 完整测试语句
+    GET /_analyze
+    {
+      "analyzer": "standard",
+      "text": "The 2 QUICK Brown-Foxes jumped over the lazy dog's bone."
+    }
+    ```
+
+按字段配置拆分词条，仅 text 类型分词，keyword、数值型不拆分；
+
+过滤停用词、标点、特殊符号。例：小米手机好用 → 拆分：小米、手机、好用
+
+1. **规整归一**
 英文统一转为小写，中文无大小写转换；记录词条对应的文档 ID、词频、偏移位置等索引元数据。
 
-3. **构建倒排索引**
+1. **构建倒排索引**
 词条作为 key，关联对应文档信息，生成词条与文档的映射关系表。
-4. **分段存储**
+1. **分段存储**
 数据按分片以段文件形式写入，后台会自动合并老旧段文件，提升查询性能。
-5. **压缩存储**
+1. **压缩存储**
 压缩落地对词条、文档 ID、位置信息等数据压缩存储，减少磁盘空间占用。
 
 三、查询执行流程
 以查询 `小米手机` 为例
 1. **检索词条 + 规整归一**
-查询文本沿用和存储完全一致的规则：
-先分词
-英文统一转小写（中文不变）
-过滤无效词条
-拆分出：小米、手机
+复用和存储一致的分析器规则，依次执行字符过滤→分词→令牌过滤；英文转小写、中文不变，剔除无效词条，拆分出：小米、手机
 
 1. **取出对应文档集合**
 小米 → [1,3]
@@ -2298,7 +2332,7 @@ GET /msg_index/_search
     // 不会对查询词分词
     // 不会转小写
     // 必须一模一样才会匹配
-      "message_type": 2
+      "message_type": 2 // 这个对应的是数值类型，能直接查到
     }
   }
 }
@@ -2353,7 +2387,251 @@ GET /msg_index/_search
 // 会自动容错，把 apple 查出来！
 ```
 
+#### 1-15 bool复合查询：must，must_not，should，filter
+
+一、bool 4大核心（必背）
+bool 查询 = **把多个条件组合在一起**
+支持：**must / must_not / should/ filter**
+
+1. **must**
+**必须满足（and / 且）**
+- 所有 must 条件**都要成立**
+- 参与**算分**，影响排序
+
+2. **must_not**
+**必须不满足（not / 非）**
+- 条件**一定不能成立**
+- 过滤掉不符合的数据
+
+3. **should**
+**满足任意一个即可（or / 或）**
+- 多个 should 里**命中一个就算**
+- 命中越多，分数越高，排序越靠前
+
+4. **filter 用法**
+特点：纯过滤条件，不计算相关性分数，查询效率更高，必须满足，只过滤不打分
+
+- 算分情况
+  - 只有 2 个会参与算分（影响排序），其余 全部不算分！  
+    - must和should会 参与算分影响排名
+  - filter和must_not不参与算分（只过滤，不影响排名）
+- bool查询采用了一种匹配越多越好的方法，因此每个匹配的must或should子句的分数将被加在一起，以提供每个
+文档的最终得分
+
+---
+
+三、实战例子（一看就懂）
+
+需求：查询消息类型为 2，发布时间在指定区间，不含广告内容，诉求为投诉或建议 的反馈内容
+
+```json
+GET /msg_index/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        {"match": {"message": "反馈"}}
+      ],
+      "filter": [
+        {"term": {"message_type": 2}},
+        {"range": {"create_time": {"gte": "2026-01-01"}}}
+      ],
+      "must_not": [
+        {"match": {"message": "广告"}}
+      ],
+      "should": [
+        {"match": {"message": "投诉"}},
+        {"match": {"message": "建议"}}
+      ]
+    }
+  }
+}
+```
+
+#### 1-16 mapping中的keyword和text类型
+
+1. 什么是 Mapping?
+   1. Mapping 等同于数据库里的表结构 Schema，用来规定索引内字段的约束规则
+      1. 我们默认添加数据时，ES会自动推断创建Mapping创建索引
+   2. 作用
+      1. 定义索引内所有字段名称
+      2. 声明字段数据类型：文本、数值、布尔、日期等
+      3. 配置索引相关属性：是否创建倒排索引、是否存储词条位置、分词规则等
+   3. 规则：一个索引仅对应唯一 Type，一套 Mapping 对应整个索引结构
+2. 常用字段类型速览---字段类型很多与mysql类型差不多多
+   1. text：可分词检索的文本内容   --- 重点讲
+   2. keyword：完整精确匹配字符串，不分词。  ----- 重点讲
+   3. integer/long：整型数字
+   4. boolean：布尔值
+   5. date：日期时间
+
+
+
+- ES对于字符串的处理有2种类型，一种叫text，一种叫keyword
+  - text 和 keyword 都会创建倒排索引！，
+  - 只有分词区别：text：分词 → 存词语，keyword：不分词 → 存完整值
+  - 例子
+    - 当你不手动定义 mapping，直接插入数据`address: "北京"`时：
+    - ES 会自动给你生成双层结构--内部同时存两份：
+      - address（text）,分词,存入倒排索引：北京（或拆分后的词）,用于：搜索、match 查询
+      - address.keyword（keyword）,不分词,完整保存 "北京",用于：精确查询、排序、聚合、分组
+          ```js
+          "address": {
+            "type": "text",        // 主字段：分词搜索
+            "fields": {
+              "keyword": {
+                "type": "keyword"  // 子字段：不分词、精确匹配、排序聚合
+              }
+            }
+          }
+          ```
+  - 怎么用？
+    - 分词搜索（用主字段）：`{ "match": { "address": "北京" } }`
+    - 精确匹配 / 排序 / 聚合（用 .keyword）:`{ "term": { "address.keyword": "北京" } }`
+    - **之前讲的term精确匹配为啥不能正常用字段了？其实term 能直接查到的字段只有 3 种：**
+      - 数字类型（integer/long）→ 你现在这种 ✅
+      - 布尔类型（true/false）✅
+      - keyword 类型（不分词字符串）✅
+      - term 查 text 类型大概率查不到 ❌
+
+
+
+
+
+- 用mapping手动创建index，生产环境下必须提前单独创建好索引，因为它自动推断的类型可能和实际不符。
+```js
+// 使用mapping手动创建index示例
+PUT /article_index
+{
+  "mappings": {
+    "properties": {
+      "title": {"type": "text"}, // 分词
+      "author": {"type": "keyword"}, // 不会分词
+      "read_num": {"type": "integer"},
+      "publish_time": {"type": "date"}
+    }
+  }
+}
+```
+
+#### 1-17 match查询原理分析-analyezer查询过程
+
+- 前面留下的疑问？为什么match查询keyword类型的字段值是能够查询到的？难道不是match先分词再查询应该查不到吗？？
+- 在存储和查询的原理中，第一步中有个分析器analyzer的工作，由3部分组成，而且内置了很多类型的分析器，这个不同分析器影响着分词效果：详见`#### 1-9 小节`
+- 所以在match查询的时候，match内部会按字段类型自动匹配内置的分析器处理检索词，keyword 字段默认配套 Keyword 分析器，该分析器不分词，检索词原样匹配存储的完整词条，因此可以命中
+
+**分析器使用细节**：
+1. match 查询可以写 analyzer: xxx 手动指定分词规则
+      ```js
+      GET /索引/_search
+      {
+        "query": {
+          "match": {
+            "字段名": {
+              "query": "要搜索的内容",
+              "analyzer": "standard"   // <-- 这里直接指定分析器
+            }
+          }
+        }
+      }
+      ```
+2. term 不能指定，因为它不分词
+3. 查询时指定的 analyzer，会覆盖字段 mapping 里默认的分析器
+4. ES 分析器 什么时候用？用哪个？ 三大规则
+   1. 规则 1：查询时手动指定 analyzer → 优先级最高
+   2. 规则 2：字段 mapping 里指定 search_analyzer → 第二优先级
+   3. 规则 3：都没指定 → 用字段 mapping 里的 analyzer
+   4. 规则 4：完全没配置 → 使用索引的 default analyzer
+
+#### 1-18 分词对于ES为什么很重要？
+
+重点讲下分析器中分词的重要性，对于英文分词和中文分词，这是一个大课题，稍微有个印象
+
+1、文本分词
+
+单词是语言中重要的基本元素。一个单词可以代表一个信息单元，有着指代名称、功能、动作、性质等作用。
+在语言的进化史中，不断有新的单词涌现，也有多单词随着时代的变迁而边缘化直至消失。根据统计，汉语词典中包含的汉语单词数目在37万左右《牛津英语词典》中的词汇约有17万.
+
+理解单词对于分析语言结构和语义具有重要的作用。因此，在机器阅读理解算法中，模型通常需要首先对语句和文本进行单词分拆和解析。
+
+分词(tokenization)的任务是将文本以单词为基本单元进行划分，由于许多词语存在词型的重叠，以及组合词的运用，解决歧义性是分词任务中的一个挑战。不同的分拆方式可能表示完全不同的语义，如在以下例子中。两种分拆方式代表的语义都有可能:如南京市长江大桥的就有很多歧义。
+
+分词的意义：最常用在nlp中
+
+2、 中英文分词的典型区别和粒度
+
+
+#### 1-19 ik分词器的安装和使用
+
+es内部并没有很好支持中文的分词器，需要装3方插件ik分词器，它的安装一定要与es版本一致
+
+1. 下载ik分词器的压缩包解压到es的docker数据卷挂载的插件目录下即可，记得把目录文件夹名改成ik
+   1. `unzip elasticsearch-analysis-ik-8.13.4.zip -d plugins/ik/`
+2. 设置权限
+   1. # 假设 ES 运行用户为 elasticsearch
+   2. chown -R elasticsearch:elasticsearch plugins/ik/
+   3. chmod -R 755 plugins/ik/
+3. 重启es容器后：`bin/elasticsearch-plugin list`
+4. 测试分词器（ik_smart /ik_max_word）
+```json
+curl -X POST http://localhost:9200/_analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "analyzer": "ik_smart", // 智能分词
+    "text": "我爱北京天安门"
+  }'
+
+// 或者kibiana语句
+  POST _analyze
+{
+  "analyzer": " ik_max_word", // 最细粒度分词
+  "text": "我爱北京天安门" // 它能分出所有可能的单词
+}
+```
+
+index一旦建立后，不能再修改分词器，除非删除index，然后重新建立
+
+#### 1-20 自定义分词器词库
+
+虽然装了中文分词插件，但是对于一些自己内部用的专有名词，还是不能智能分词出来，如慕课网，这个词会被拆开，这时候需要增加词库了
+
+ik插件给我们预留了可以添加自定义词库的接口的
+
+1. 找到 IK 配置文件：plugins/ik/config/IKAnalyzer.cfg.xml
+2. 打开 IKAnalyzer.cfg.xml，把下面这段完整替换进去：
+```js
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+    <comment>IK Analyzer 扩展配置</comment>
+
+    <!-- 这里添加你的自定义词库文件 -->
+    <entry key="ext_dict">my_dict.dic</entry>
+
+    <!-- 停用词（可选） -->
+    <entry key="ext_stopwords">my_stopword.dic</entry>
+</properties>
+```
+3. 在 同一个目录（plugins/ik/config/）下新建文件:my_dict.dic,里面写入你的专有名词，一行一个：保存即可。
+4. 重启ES容器：docker restart es01
+
+
+- 还可以建立一个停用词库：my_stopword.dic文件
+  - 
+  ```js
+      的
+      了
+      吗
+      呢
+      啊
+      在
+      是
+      和
+      与
+  ```
+  - 停用词 = 我不要的词，这些词会直接被过滤，不参与分词和搜索。，不想让它分词、不想让它被搜索到的词比如：的、了、吗、呢、啊、在、是、这个、那个……
+
 ### 2章 将ElasticSearch集成到项目中
 
-
+#### 2-1 go实现match查询
 ### 3章 前后端联调
