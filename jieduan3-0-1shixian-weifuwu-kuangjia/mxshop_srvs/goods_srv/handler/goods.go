@@ -53,7 +53,8 @@ func ModelToResponse(goods model.Goods) proto.GoodsInfoResponse {
 }
 
 func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterRequest) (*proto.GoodsListResponse, error) {
-	//使用es的目的是搜索出商品的id来，通过id拿到具体的字段信息是通过mysql来完成
+	// 使用es的目的是搜索出商品的id来，通过id拿到具体的字段信息是通过mysql来完成
+
 	//我们使用es是用来做搜索的， 是否应该将所有的mysql字段全部在es中保存一份
 	//es用来做搜索，这个时候我们一般只把搜索和过滤的字段信息保存到es中
 	//es可以用来当做mysql使用， 但是实际上mysql和es之间是互补的关系， 一般mysql用来做存储使用，es用来做搜索使用
@@ -71,17 +72,21 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 		// 用 ElasticSearch 做关键词全文搜索（搜商品名称、简介）
 		// 不使用where("name like ?") 语法， 不使用 MySQL 的 LIKE 模糊查询，改用 ES 全文检索
 		// 下面等价于WHERE name LIKE '%手机%' OR goods_brief LIKE '%手机%'
+		// 我们对3个字段进行搜索关键词，使用 MultiMatchQuery，多字段分词查询
 		q = q.Must(elastic.NewMultiMatchQuery(req.KeyWords, "name", "goods_brief"))
 	}
 	if req.IsHot {
 		localDB = localDB.Where(model.Goods{IsHot: true})
+		// 精确字段查询，使用filter不参与算分，不要使用must，业务层面只筛选不需要算分排名
 		q = q.Filter(elastic.NewTermQuery("is_hot", req.IsHot))
 	}
 	if req.IsNew {
+		// 都不参与算分，只筛选，精确查询
 		q = q.Filter(elastic.NewTermQuery("is_new", req.IsNew))
 	}
 
 	if req.PriceMin > 0 {
+		// 范围查询
 		q = q.Filter(elastic.NewRangeQuery("shop_price").Gte(req.PriceMin))
 	}
 	if req.PriceMax > 0 {
@@ -89,10 +94,14 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 	}
 
 	if req.Brand > 0 {
+		// 精确查询
 		q = q.Filter(elastic.NewTermQuery("brands_id", req.Brand))
 	}
 
-	//通过category去查询商品
+	// 通过category去查询商品：电商商品三级分类 + ES terms 查询
+	// 功能：根据用户传的 商品分类ID（1级/2级/3级）
+	// 自动查询出 所有下级分类ID
+	// 然后用 ES 的 terms 查询 匹配这些分类下的所有商品id
 	var subQuery string
 	categoryIds := make([]interface{}, 0)
 	if req.TopCategory > 0 {
@@ -102,23 +111,29 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 		}
 
 		if category.Level == 1 {
+			// 如果是 1 级分类，要查 所有 3 级子分类
 			subQuery = fmt.Sprintf("select id from category where parent_category_id in (select id from category WHERE parent_category_id=%d)", req.TopCategory)
 		} else if category.Level == 2 {
+			// 如果是 2 级分类，直接查 所有下级 3 级分类 ID
 			subQuery = fmt.Sprintf("select id from category WHERE parent_category_id=%d", req.TopCategory)
 		} else if category.Level == 3 {
+			// 如果是 3 级分类，只查自己
 			subQuery = fmt.Sprintf("select id from category WHERE id=%d", req.TopCategory)
 		}
 
 		type Result struct {
-			ID int32
+			ID int32 // 可以只写部分字段
 		}
+		// 执行原生sql
 		var results []Result
+		// Scan方法：会把数据库查到的值，赋值到指定的结构体中去
 		global.DB.Model(model.Category{}).Raw(subQuery).Scan(&results)
 		for _, re := range results {
 			categoryIds = append(categoryIds, re.ID)
 		}
 
-		//生成terms查询
+		// es操作：生成terms查询----实现查到分类id属于属于多个categoryId 的多个结果，类似于mysql的in
+		// 注意下categoryIds... 的用法：它内部虽然接收的是...interface{} 任意类型，但categoryIds想解构也必须是interface类型，不能是其他类型的解构如：categoryIds := make([]int, 0)
 		q = q.Filter(elastic.NewTermsQuery("category_id", categoryIds...))
 	}
 
@@ -133,6 +148,7 @@ func (s *GoodsServer) GoodsList(ctx context.Context, req *proto.GoodsFilterReque
 	case req.PagePerNums <= 0:
 		req.PagePerNums = 10
 	}
+	// es的分页查询
 	result, err := global.EsClient.Search().Index(model.EsGoods{}.GetIndexName()).Query(q).From(int(req.Pages)).Size(int(req.PagePerNums)).Do(context.Background())
 	if err != nil {
 		return nil, err
@@ -220,6 +236,7 @@ func (s *GoodsServer) CreateGoods(ctx context.Context, req *proto.CreateGoodsInf
 	}
 
 	//srv之间互相调用了
+	// 事务：包含mysql操作和es操作
 	tx := global.DB.Begin()
 	result := tx.Save(&goods)
 	if result.Error != nil {
@@ -232,6 +249,11 @@ func (s *GoodsServer) CreateGoods(ctx context.Context, req *proto.CreateGoodsInf
 	}, nil
 }
 
+// 删除商品----结合es做了优化
+// 优化 1：强制指定了 Model 结构体的参数，否则默认空结构体会导致钩子中取不到参数，只拿了零值
+// 优化 2: 删除操作，不能用 RowsAffected == 0 来判断 “数据不存在”！必须用 result.Error != nil 来判断是否执行失败！
+// 软删除场景下，已经被删过的数据，RowsAffected = 0
+// result.Error != nil：只要 SQL 执行成功，不管有没有真的删除数据，都不会返回 error！
 func (s *GoodsServer) DeleteGoods(ctx context.Context, req *proto.DeleteGoodsInfo) (*emptypb.Empty, error) {
 	if result := global.DB.Delete(&model.Goods{BaseModel: model.BaseModel{ID: req.Id}}, req.Id); result.Error != nil {
 		return nil, status.Errorf(codes.NotFound, "商品不存在")
@@ -273,6 +295,7 @@ func (s *GoodsServer) UpdateGoods(ctx context.Context, req *proto.CreateGoodsInf
 	goods.IsHot = req.IsHot
 	goods.OnSale = req.OnSale
 
+	// 为mysql和es添加事务
 	tx := global.DB.Begin()
 	result := tx.Save(&goods)
 	if result.Error != nil {

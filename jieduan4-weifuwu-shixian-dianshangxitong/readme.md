@@ -2338,6 +2338,18 @@ GET /msg_index/_search
 }
 ```
 
+- 再学习一个terms查询语句：查询出多个精确匹配的query
+```js
+GET /msg_index/_search
+{
+  "query": {
+    "terms": {
+      "message_type": [1, 2, 3]
+    }
+  }
+}
+```
+
 #### 1-14 range区间查询、exists查询 和 fuzzy模糊查询
 
 - 三者都属于不分词的精确层级查询，和 term 逻辑一致，不会对检索词分词处理
@@ -2568,7 +2580,7 @@ es内部并没有很好支持中文的分词器，需要装3方插件ik分词器
 1. 下载ik分词器的压缩包解压到es的docker数据卷挂载的插件目录下即可，记得把目录文件夹名改成ik
    1. `unzip elasticsearch-analysis-ik-8.13.4.zip -d plugins/ik/`
 2. 设置权限
-   1. # 假设 ES 运行用户为 elasticsearch
+   1. 假设 ES 运行用户为 elasticsearch
    2. chown -R elasticsearch:elasticsearch plugins/ik/
    3. chmod -R 755 plugins/ik/
 3. 重启es容器后：`bin/elasticsearch-plugin list`
@@ -2633,5 +2645,104 @@ ik插件给我们预留了可以添加自定义词库的接口的
 
 ### 2章 将ElasticSearch集成到项目中
 
+es中在项目承担的主要功能就是搜索商品功能，我们使用三方库在go中操作es：`olivere/elastic`
+
+- 主要就是对我们的商品列表进行一个ES全文搜索的能力，实现类似淘宝那样输入几个关键词，能快速查出相关的商品
+- es是文档型数据库，mysql是关系型数据库，他俩之间是互补
+
+
+- ES 擅长场景
+  - 全文分词检索，中文模糊、多关键字匹配
+  - 海量数据快速查询、聚合统计、分组排序
+  - 日志、商品、文章等大文本内容搜索
+  - 多维复杂条件筛选、范围查询
+  - 不支持事务，关联查询，join等
+- MySQL 擅长场景
+  - 事务处理，保证数据一致性、原子性
+  - 增删改高频业务、数据精准 CRUD
+  - 表关联查询、主键唯一约束
+  - 数据持久稳定存储、账务订单类业务
+- 业务搭配思路
+  - 核心业务数据存 MySQL，部分用于搜索的字段同步到 ES；
+  - 查搜索、统计走 ES，改数据、事务走 MySQL。
+
+
 #### 2-1 go实现match查询
+
+
+- es的测试目录见`es_test/main.go`
+
+#### 2-2 将es中的对象转为struct类型
+
+- 转成map类型：`json.Unmarshal(hit.Source, &data)`
+- 转成结构体类型见代码
+
+业务中一般用结构体，不用map，结构体有类型安全，map没有
+
+#### 2-3 添加一个数据到es中
+
+- 使用 client.Index() 添加数据--- 见 `es_test/main.go`
+
+#### 2-4 通过go语言完成mapping的新建索引
+
+- 前面的Post方法增加数据会自动推断索引mapping类型，我们业务中需要指定分词器类型和字段的keyword类型，所以一般都通过mapping新建索引
+- 见 `es_test/main.go`中部分
+
+#### 2-5 商品微服务项目中有哪些接口需要使用es
+
+1. 先去看下`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv`中看下有哪些接口需要接入es
+2. 对于商品的操作：商品列表搜索，商品添加，商品更新，商品删除。
+3. es的操作一般与数据库操作写在一起，即写在goods_srv中不写在goods_web层，因为正好放到一个事务中，万一数据库操作成功了，es操作失败了
+
+#### 2-6 mysql和es分别在系统中的角色是什么
+
+`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/handler/goods.go`
+
+1. 确定下使用es的目的
+2. 在商品列表接口`GoodsList`方法中，需要搞清哪些字段需要es操作，哪些字段不能使用es操作
+   1. 具体见该方法注释：写了相关理论注释，如下：
+    ```js
+      //使用es的目的是搜索出商品的id来，通过id拿到具体的字段信息是通过mysql来完成
+      //我们使用es是用来做搜索的， 是否应该将所有的mysql字段全部在es中保存一份
+      //es用来做搜索，这个时候我们一般只把仅部分字段：搜索和过滤的字段信息保存到es中,如图片url等就没必要存在es中
+      //es可以用来当做mysql使用， 但是实际上mysql和es之间是互补的关系， 一般mysql用来做存储使用，es用来做搜索使用
+      //es想要提高性能， 就要将es的内存设置的够大， 1k 2k
+    ```
+3. 确定下关系是es与mysql互补：只用es来存商品的id和筛选字段，最终通过es查出来的是目标商品id，然后通过mysql查出商品详情返给前端
+#### 2-7 建立商品对应的struct和mapping
+
+
+1. 我们先统一建立es_goods的专用model表类型结构`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/model/es_goods.go`
+   1. 建好mapping和struct
+2. 然后在初始化期间，给它向es中初始化好索引见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/initialize/es.go`
+
+#### 2-8 启动gin初始化过程新建indexing和mapping
+
+1. 和其他项目初始化逻辑一样，现在nacos新建相关配置，全局变量es客户端创建，全局初始化模块集成
+2. 完善es初始化方法见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/initialize/es.go`
+3. 然后在main中执行初始化方法
+
+#### 2-9 将mysql中的商品数据同步到es中
+
+1. 先做个把当前mysql中的数据同步到es中，要不es没数据没法做搜索查询：见jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/model/main/main.go的Mysql2Es方法，直接在model/main中调用
+
+#### 2-10&11 如何通过mysql和es协作完成商品的查询-1
+
+- `jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/handler/goods.go`
+
+- 对于商品列表查询我们最终使用用es的bool复合查询，完成各种的条件筛选功能
+
+
+#### 2-12 调试商品列表的es接口
+#### 2-13 确保商品添加到es中的事务一致性
+
+1. 商品添加，商品更新，商品删除。这个接口中最后操作mysql后，都需要同步到es中的数据，我们选择使用gorm的钩子统一维护这个扩展逻辑，解耦性好
+2. 在`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/model/goods.go`中书写after的钩子函数
+3. 确保加到事务中，不管mysql失败或es失败，都得回滚，使用`tx.Rollback()`回滚
+
+#### 2-14 实现商品的更新和商品的删除
+
+- 删除这块删除商品，默认写法hook触发了，但是id为零值拿不到
+  - 原因：钩子里的结构体参数，GORM 钩子的参数 = 你传给 Delete/Update/Create 的那个对象本身完全不经过数据库查询！
+  - 后来做了优化，具体看`unc (s *GoodsServer) DeleteGoods(`代码处注释
 ### 3章 前后端联调

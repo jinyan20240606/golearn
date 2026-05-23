@@ -109,6 +109,7 @@ func Mysql2Es() {
 		if err != nil {
 			panic(err)
 		}
+		// 这一波数据大概几百条，可能有些同学会同步失败有些会成功
 		//强调一下 一定要将docker启动es的java_ops的内存设置大一些 否则运行过程中会出现 bad request错误
 	}
 }

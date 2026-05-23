@@ -2,7 +2,10 @@
 
 笔记参考百度网盘的6-go语言工程师体系课
 
+## go语言原理相关
 
+1. Node.js 是单线程异步非阻塞，io时必须用 await，否则会卡死。
+2. Go 是多线程同步阻塞，天生支持高并发，io时可以直接同步写法，性能无敌！
 
 ## 易混积累
 
@@ -32,11 +35,38 @@
 ### 常用遗忘方法
 1. strings.SplitN(字符串, 分隔符, 切成几段)
 2. json序列化和反序列化方法
-   1. `// 序列化：必须1个参数（只给数据）`
-   2. `b, _ := json.Marshal(&categorys)`
-   3. `// 反序列化：必须2个参数（给JSON + 给空切片）`
-   4. `var data []model.Category`
-   5. `json.Unmarshal(b, &data)`
+   1. `序列化：只接收1个参数（任何类型）转成json字节切片类型`
+      1. `b, _ := json.Marshal(&categorys)`
+      2. json.Marshal(任何类型) 返回值永远是 []byte
+         1. json.Marshal 可以接收 Go 里几乎所有常用类型转成json字节切片
+         2. Marshal = 把 Go 数据 → 变成 JSON 字节（序列化）
+   2. `反序列化：只接收2个参数（[]byte (字节切片), 指针变量）`
+      1. `var data []model.Category`-`json.Unmarshal(b, &data)`
+      2. Unmarshal = 把 JSON 字节 → 变回 Go 数据（反序列化）
+         1. json.Unmarshal 第一个参数 只接受一种类型：[]byte (字节切片)，2参是指针变量
+         2. 转换成 Go 里几乎所有常用类型：bool，int / uint / float，string，slice / 数组，map，结构体，interface{}
+            ```go
+               // 转成map类型
+               bs := []byte(`{"name":"张三","age":20}`)
+
+               var m map[string]interface{}
+               json.Unmarshal(bs, &m)
+
+               fmt.Println(m["name"]) // 张三
+               // 转成 结构体类型
+               type User struct {
+                  Name string `json:"name"`
+                  Age  int    `json:"age"`
+               }
+
+               bs := []byte(`{"name":"张三","age":20}`)
+
+               var u User
+               json.Unmarshal(bs, &u)
+
+               fmt.Println(u.Name) // 张三
+            ```
+         3. 将原始json字符串解析：把原始json字符串 转 [] byte，用 json.Unmarshal 解析
 3. time方法
    1. `time.Unix(int64(value.BirthDay), 0)`
       1. func Unix(sec int64, nsec int64) Time

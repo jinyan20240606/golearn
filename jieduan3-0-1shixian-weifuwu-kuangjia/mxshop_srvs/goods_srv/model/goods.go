@@ -93,6 +93,7 @@ type Goods struct {
 	GoodsFrontImage string   `gorm:"type:varchar(200);not null"`  // 商品封面图（主图）
 }
 
+// 创建钩子中同步es
 func (g *Goods) AfterCreate(tx *gorm.DB) (err error) {
 	esModel := EsGoods{
 		ID:          g.ID,
@@ -118,6 +119,7 @@ func (g *Goods) AfterCreate(tx *gorm.DB) (err error) {
 	return nil
 }
 
+// 更新钩子中同步es
 func (g *Goods) AfterUpdate(tx *gorm.DB) (err error) {
 	esModel := EsGoods{
 		ID:          g.ID,
@@ -144,6 +146,7 @@ func (g *Goods) AfterUpdate(tx *gorm.DB) (err error) {
 	return nil
 }
 
+// 删除钩子中同步es
 func (g *Goods) AfterDelete(tx *gorm.DB) (err error) {
 	_, err = global.EsClient.Delete().Index(EsGoods{}.GetIndexName()).Id(strconv.Itoa(int(g.ID))).Do(context.Background())
 	if err != nil {
