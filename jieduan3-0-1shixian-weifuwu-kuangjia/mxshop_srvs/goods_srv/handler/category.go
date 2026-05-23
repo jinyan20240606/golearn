@@ -87,6 +87,17 @@ func (s *GoodsServer) GetSubCategory(ctx context.Context, req *proto.CategoryLis
 	return &categoryListResponse, nil
 }
 func (s *GoodsServer) CreateCategory(ctx context.Context, req *proto.CategoryInfoRequest) (*proto.CategoryInfoResponse, error) {
+	// category := model.Category{} // 初始化结构体 → 所有字段 = 零值
+	// category.Name = req.Name
+	// category.Level = req.Level
+	// if req.Level != 1 {
+	// 	category.ParentCategoryID = req.ParentCategory
+	// }
+	// category.IsTab = req.IsTab
+
+	// global.DB.Save(&category) // ❌ 这种写法危险，触发结构体的零值bug，导致插入脏数据！
+
+	// Go 结构体默认零值会坑死 GORM + MySQL，用 map 就能完美避开
 	category := model.Category{}
 	cMap := map[string]interface{}{}
 	cMap["name"] = req.Name
@@ -149,7 +160,10 @@ func (s *GoodsServer) UpdateCategory(ctx context.Context, req *proto.CategoryInf
 		category.IsTab = req.IsTab
 	}
 
-	global.DB.Save(&category)
+	re := global.DB.Save(&category)
+	if re.Error != nil {
+		return nil, status.Errorf(codes.Internal, "更新失败"+re.Error.Error())
+	}
 
 	return &emptypb.Empty{}, nil
 }

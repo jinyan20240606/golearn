@@ -32,7 +32,9 @@ func BrandList(ctx *gin.Context) {
 	result := make([]interface{}, 0)
 	reMap := make(map[string]interface{})
 	reMap["total"] = rsp.Total
-	for _, value := range rsp.Data[pnInt : pnInt*pSizeInt+pSizeInt] {
+	// 这块容易报错，server层已经分页了总共反了10条，但是当前web-api层还要切片分页要取20个，就容易bug，server层已经分页了，web-api层不需要再分页了
+	// for _, value := range rsp.Data[pnInt : pnInt*pSizeInt+pSizeInt] {
+	for _, value := range rsp.Data {
 		reMap := make(map[string]interface{})
 		reMap["id"] = value.Id
 		reMap["name"] = value.Name
