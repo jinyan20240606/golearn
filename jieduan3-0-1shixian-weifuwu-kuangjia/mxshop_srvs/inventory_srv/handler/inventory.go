@@ -168,6 +168,7 @@ func (*InventoryServer) Reback(ctx context.Context, req *proto.SellInfo) (*empty
 	return &emptypb.Empty{}, nil
 }
 
+// TCC的预扣减库存服务
 func (*InventoryServer) TrySell(ctx context.Context, req *proto.SellInfo) (*emptypb.Empty, error) {
 	//扣减库存， 本地事务 [1:10,  2:5, 3: 20]
 	//数据库基本的一个应用场景：数据库事务
@@ -204,7 +205,7 @@ func (*InventoryServer) TrySell(ctx context.Context, req *proto.SellInfo) (*empt
 		}
 		//扣减， 会出现数据不一致的问题 - 锁，分布式锁
 		//inv.Stocks -= goodInfo.Num
-		inv.Freeze += goodInfo.Num
+		inv.Freeze += goodInfo.Num // 冻结了多少库存，不是之前默认的直接扣减逻辑了
 		tx.Save(&inv)
 
 		if ok, err := mutex.Unlock(); !ok || err != nil {
@@ -226,6 +227,7 @@ func (*InventoryServer) TrySell(ctx context.Context, req *proto.SellInfo) (*empt
 	return &emptypb.Empty{}, nil
 }
 
+// TCC的确认扣减库存服务
 func (*InventoryServer) ConfirmSell(ctx context.Context, req *proto.SellInfo) (*emptypb.Empty, error) {
 	//扣减库存， 本地事务 [1:10,  2:5, 3: 20]
 	//数据库基本的一个应用场景：数据库事务
@@ -284,6 +286,7 @@ func (*InventoryServer) ConfirmSell(ctx context.Context, req *proto.SellInfo) (*
 	return &emptypb.Empty{}, nil
 }
 
+// TCC的取消扣减库存服务
 func (*InventoryServer) CancelSell(ctx context.Context, req *proto.SellInfo) (*emptypb.Empty, error) {
 	//扣减库存， 本地事务 [1:10,  2:5, 3: 20]
 	//数据库基本的一个应用场景：数据库事务

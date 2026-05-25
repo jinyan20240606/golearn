@@ -255,10 +255,11 @@ func (o *OrderListener) ExecuteLocalTransaction(msg *primitive.Message) primitiv
 		1. 调用库存服务的trysell
 		2. 调用仓库服务的trysell
 		3. 调用积分服务的tryAdd
-		任何一个服务出现了异常，那么你得调用对应的所有的微服务的cancel接口
-		如果所有的微服务都正常，那么你得调用所有的微服务的confirm
+		4. 在这里捕获住所有异常，如果任何一个服务出现了异常，那么你得调用对应的所有的微服务的cancel接口
+		5. 如果所有的微服务都正常，那么你得调用所有的微服务的confirm
 	*/
 	queryInvSpan := opentracing.GlobalTracer().StartSpan("query_inv", opentracing.ChildOf(parentSpan.Context()))
+	// 这里调用，先不实际修改成trysell了，知道在这调就行了
 	if _, err = global.InventorySrvClient.Sell(context.Background(), &proto.SellInfo{OrderSn: orderInfo.OrderSn, GoodsInfo: goodsInvInfo}); err != nil {
 		//如果是因为网络问题， 这种如何避免误判， 大家自己改写一下sell的返回逻辑
 		o.Code = codes.ResourceExhausted

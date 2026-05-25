@@ -40,14 +40,15 @@ type InventoryNew struct {
 	Goods   int32 `gorm:"type:int;index"`
 	Stocks  int32 `gorm:"type:int"`
 	Version int32 `gorm:"type:int"` //分布式锁的乐观锁
-	Freeze  int32 `gorm:"type:int"` //冻结库存
+	Freeze  int32 `gorm:"type:int"` //冻结库存 --- 用于分布式事务TCC的实现方案
 }
 
+// 仓库服务：这个表的作用：生成出库单、记录出库单，仓库管理员要拿这个单子去办理出库出货
 type Delivery struct {
-	Goods   int32  `gorm:"type:int;index"`
-	Nums    int32  `gorm:"type:int"`
-	OrderSn string `gorm:"type:varchar(200)"`
-	Status  string `gorm:"type:varchar(200)"` //1. 表示等待支付 2. 表示支付成功 3. 失败
+	Goods   int32  `gorm:"type:int;index"`    // 商品ID
+	Nums    int32  `gorm:"type:int"`          // 出库数量
+	OrderSn string `gorm:"type:varchar(200)"` // 订单号，哪个订单产生的
+	Status  string `gorm:"type:varchar(200)"` //1. 表示等待支付 2. 表示支付成功 3. 失败------ T阶段改成1，确认时改成2，回滚时改成3
 }
 
 type StockSellDetail struct {
