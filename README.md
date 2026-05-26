@@ -22,6 +22,11 @@
    3. 正确写法（2 种，任选）
       1. strconv.Itoa(i)
       2. fmt.Sprintf（一行搞定）：result := fmt.Sprintf("%s %d %d", req.Data, i, time.Now().Unix())
+4. 省略号语法2种用法
+   1. 参数用：表示可变参数类型，作为类型
+      1. `func callback(msgs ...*MessageExt) ` msgs就是可变参数类型的变量
+   3. 传值用：表示代表把切片打散，一个个传进去，作为值用
+      1. `callback(msgList...) // ✅ 正确！打散切片传入`
 
 ### 数据库相关
 
