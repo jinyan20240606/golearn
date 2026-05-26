@@ -75,7 +75,7 @@ func (*InventoryServer) Sell(ctx context.Context, req *proto.SellInfo) (*emptypb
 	tx := global.DB.Begin()
 	//m.Lock() //获取锁 这把锁有问题吗？  假设有10w的并发， 这里并不是请求的同一件商品  这个锁就没有问题了吗？
 
-	//这个时候应该先查询表，然后确定这个订单是否已经扣减过库存了，已经扣减过了就别扣减了
+	//这个时候应该先查询StockSellDetail表，然后确定这个订单是否已经扣减过库存了，已经扣减过了就别扣减了
 	//并发时候会有漏洞， 同一个时刻发送了重复了多次， 使用锁，分布式锁
 	sellDetail := model.StockSellDetail{
 		OrderSn: req.OrderSn,
