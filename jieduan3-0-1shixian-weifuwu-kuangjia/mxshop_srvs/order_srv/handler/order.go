@@ -190,6 +190,7 @@ func (*OrderServer) OrderDetail(ctx context.Context, req *proto.OrderRequest) (*
 
 // rocketmq用的封装结构体
 type OrderListener struct {
+	// 这些字段用来保存返回grpc的响应格式
 	Code        codes.Code
 	Detail      string
 	ID          int32
@@ -200,16 +201,19 @@ type OrderListener struct {
 // OrderListener的执行本地事务方法
 func (o *OrderListener) ExecuteLocalTransaction(msg *primitive.Message) primitive.LocalTransactionState {
 	var orderInfo model.OrderInfo
+	// 反解JSON字符串为结构体
 	_ = json.Unmarshal(msg.Body, &orderInfo)
 	parentSpan := opentracing.SpanFromContext(o.Ctx)
 
 	var goodsIds []int32
 	var shopCarts []model.ShoppingCart
 	goodsNumsMap := make(map[int32]int32)
+	// 先查选中结算的商品是否存在
 	shopCartSpan := opentracing.GlobalTracer().StartSpan("select_shopcart", opentracing.ChildOf(parentSpan.Context()))
 	if result := global.DB.Where(&model.ShoppingCart{User: orderInfo.User, Checked: true}).Find(&shopCarts); result.RowsAffected == 0 {
 		o.Code = codes.InvalidArgument
 		o.Detail = "没有选中结算的商品"
+		// 刚才的消息没有必要发送了，直接回滚消息
 		return primitive.RollbackMessageState
 	}
 	shopCartSpan.Finish()
@@ -261,13 +265,14 @@ func (o *OrderListener) ExecuteLocalTransaction(msg *primitive.Message) primitiv
 	queryInvSpan := opentracing.GlobalTracer().StartSpan("query_inv", opentracing.ChildOf(parentSpan.Context()))
 	// 这里调用，先不实际修改成trysell了，知道在这调就行了
 	if _, err = global.InventorySrvClient.Sell(context.Background(), &proto.SellInfo{OrderSn: orderInfo.OrderSn, GoodsInfo: goodsInvInfo}); err != nil {
-		//如果是因为网络问题， 这种如何避免误判， 大家自己改写一下sell的返回逻辑
+		//如果是因为网络问题， 这种如何避免误判， 大家自己改写一下库存服务中sell的返回逻辑,通过与内置业务码判断，不在业务码的就是网络问题
 		o.Code = codes.ResourceExhausted
 		o.Detail = "扣减库存失败"
 		return primitive.RollbackMessageState
 	}
 	queryInvSpan.Finish()
 
+	// return primitive.CommitMessageState // 故意触发失败测试回查链路，看下库存能不能归还回去
 	//生成订单表
 	//20210308xxxx。 --- 生成订单编号
 	tx := global.DB.Begin()
@@ -277,6 +282,7 @@ func (o *OrderListener) ExecuteLocalTransaction(msg *primitive.Message) primitiv
 		tx.Rollback()
 		o.Code = codes.Internal
 		o.Detail = "创建订单失败"
+		// 本地事务失败，直接提交这个最开始归还订单的消息
 		return primitive.CommitMessageState
 	}
 	saveOrderSpan.Finish()
@@ -307,7 +313,7 @@ func (o *OrderListener) ExecuteLocalTransaction(msg *primitive.Message) primitiv
 	}
 	deleteShopCartSpan.Finish()
 
-	//发送延时消息
+	//发送延时消息：针对于订单支付超时机制
 	p, err := rocketmq.NewProducer(producer.WithNameServer([]string{"192.168.0.104:9876"}))
 	if err != nil {
 		panic("生成producer失败")
@@ -317,16 +323,16 @@ func (o *OrderListener) ExecuteLocalTransaction(msg *primitive.Message) primitiv
 	if err = p.Start(); err != nil {
 		panic("启动producer失败")
 	}
-
+	// 订单超时topic
 	msg = primitive.NewMessage("order_timeout", msg.Body)
-	msg.WithDelayTimeLevel(3)
+	msg.WithDelayTimeLevel(5) // 临时测试1分钟，一般16 30分钟
 	_, err = p.SendSync(context.Background(), msg)
 	if err != nil {
 		zap.S().Errorf("发送延时消息失败: %v\n", err)
 		tx.Rollback()
 		o.Code = codes.Internal
 		o.Detail = "发送延时消息失败"
-		return primitive.CommitMessageState
+		return primitive.CommitMessageState // 提交归还消息
 	}
 
 	//if err = p.Shutdown(); err != nil {panic("关闭producer失败")}
@@ -342,11 +348,14 @@ func (o *OrderListener) CheckLocalTransaction(msg *primitive.MessageExt) primiti
 	var orderInfo model.OrderInfo
 	_ = json.Unmarshal(msg.Body, &orderInfo)
 
-	//怎么检查之前的逻辑是否完成
+	//怎么检查之前的逻辑是否完成：直接查询携带的orderSN 是否存在数据库
 	if result := global.DB.Where(model.OrderInfo{OrderSn: orderInfo.OrderSn}).First(&orderInfo); result.RowsAffected == 0 {
-		return primitive.CommitMessageState //你并不能说明这里就是库存已经扣减了
+		// 虽然这里数据库中没有查到，按理说要归还库存了，但是实际上你并不能说明这里就是库存已经扣减了
+		// 因为前面执行事务中，你不知道它在哪个逻辑处就失败了或是服务挂了，
+		// 所以你必须在消费端库存服务中归还库存接口中一定要做好幂等性保证，没有扣减的一定不能扣减
+		return primitive.CommitMessageState
 	}
-
+	// 查询到了，说明库存已经扣减了，直接回滚消息，就没必要归还库存了
 	return primitive.RollbackMessageState
 }
 
@@ -368,6 +377,7 @@ func (*OrderServer) CreateOrder(ctx context.Context, req *proto.OrderRequest) (*
 			4. 订单的基本信息表 - 订单的商品信息表
 			5. 从购物车中删除已购买的记录
 	*/
+	// 1、创建RocketMQ实例producer
 	orderListener := OrderListener{Ctx: ctx}
 	p, err := rocketmq.NewTransactionProducer(
 		&orderListener,
@@ -384,7 +394,7 @@ func (*OrderServer) CreateOrder(ctx context.Context, req *proto.OrderRequest) (*
 	}
 
 	order := model.OrderInfo{
-		OrderSn:      GenerateOrderSn(req.UserId),
+		OrderSn:      GenerateOrderSn(req.UserId), // 记录订单编号，防止重复归还
 		Address:      req.Address,
 		SignerName:   req.Name,
 		SingerMobile: req.Mobile,
@@ -394,6 +404,7 @@ func (*OrderServer) CreateOrder(ctx context.Context, req *proto.OrderRequest) (*
 	//应该在消息中具体指明一个订单的具体的商品的扣减情况
 	jsonString, _ := json.Marshal(order)
 
+	// 发送MQ事务消息
 	_, err = p.SendMessageInTransaction(context.Background(),
 		primitive.NewMessage("order_reback", jsonString))
 	if err != nil {
@@ -419,6 +430,7 @@ func (*OrderServer) UpdateOrderStatus(ctx context.Context, req *proto.OrderStatu
 	return &emptypb.Empty{}, nil
 }
 
+// 处理订单超时的逻辑
 func OrderTimeout(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 
 	for i := range msgs {
@@ -426,12 +438,14 @@ func OrderTimeout(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.
 		_ = json.Unmarshal(msgs[i].Body, &orderInfo)
 
 		fmt.Printf("获取到订单超时消息: %v\n", time.Now())
-		//查询订单的支付状态，如果已支付什么都不做，如果未支付，归还库存
+		// 得先校验：判断支付状态，万一中途又支付成功了
+		// 查询订单的支付状态，如果已支付什么都不做，如果未支付，归还库存
 		var order model.OrderInfo
 		if result := global.DB.Model(model.OrderInfo{}).Where(model.OrderInfo{OrderSn: orderInfo.OrderSn}).First(&order); result.RowsAffected == 0 {
 			return consumer.ConsumeSuccess, nil
 		}
 		if order.Status != "TRADE_SUCCESS" {
+			// 放到一个事务中做
 			tx := global.DB.Begin()
 			//归还库存，我们可以模仿order中发送一个消息到 order_reback中去
 			//修改订单的状态为已支付
@@ -446,7 +460,7 @@ func OrderTimeout(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.
 			if err = p.Start(); err != nil {
 				panic("启动producer失败")
 			}
-
+			// 这里不需要发事务消息了，直接发个普通消息就行，触发库存归还
 			_, err = p.SendSync(context.Background(), primitive.NewMessage("order_reback", msgs[i].Body))
 			if err != nil {
 				tx.Rollback()
@@ -454,6 +468,7 @@ func OrderTimeout(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.
 				return consumer.ConsumeRetryLater, nil
 			}
 
+			// 必须注释调这个shutdown，这个方法在这下有坑
 			//if err = p.Shutdown(); err != nil {panic("关闭producer失败")}
 			return consumer.ConsumeSuccess, nil
 		}

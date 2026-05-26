@@ -16,13 +16,16 @@ type GoodsDetail struct {
 	Goods int32
 	Num   int32
 }
+
+// GORM 中自定义数据类型的标准写法，专门用来让 Go 结构体切片自动存到 MySQL 的 JSON 字段
 type GoodsDetailList []GoodsDetail
 
+// 当你 Create / Save 时，GORM 自动调用 Value()，把 GoodsDetailList 切片序列化成 JSON 字符串，存入 MySQL 的 JSON 字段
 func (g GoodsDetailList) Value() (driver.Value, error) {
 	return json.Marshal(g)
 }
 
-// 实现 sql.Scanner 接口，Scan 将 value 扫描至 Jsonb
+// 当你 First / Find 时，GORM 自动调用 Scan()，把 MySQL 里的 JSON 字节 反序列化，自动填回 GoodsDetailList 结构体
 func (g *GoodsDetailList) Scan(value interface{}) error {
 	return json.Unmarshal(value.([]byte), &g)
 }
@@ -51,9 +54,10 @@ type Delivery struct {
 	Status  string `gorm:"type:varchar(200)"` //1. 表示等待支付 2. 表示支付成功 3. 失败------ T阶段改成1，确认时改成2，回滚时改成3
 }
 
+// 归还库存用的归还记录对照表
 type StockSellDetail struct {
-	OrderSn string          `gorm:"type:varchar(200);index:idx_order_sn,unique;"`
-	Status  int32           `gorm:"type:varchar(200)"` //1 表示已扣减 2. 表示已归还
+	OrderSn string          `gorm:"type:varchar(200);index:idx_order_sn,unique;"` // 应该建立个唯一索引，后续会查询这个
+	Status  int32           `gorm:"type:varchar(200)"`                            //1 表示已扣减 2. 表示已归还
 	Detail  GoodsDetailList `gorm:"type:varchar(200)"`
 }
 
@@ -61,6 +65,7 @@ func (StockSellDetail) TableName() string {
 	return "stockselldetail"
 }
 
+// 这个表结构不采用，比较麻烦，一个订单中10个商品你就得插10条数据，因为是以商品的维度的，简单点可以直接采用以订单号为维度，上面的StockSellDetail结构
 //type InventoryHistory struct {
 //	user int32
 //	goods int32 // 商品

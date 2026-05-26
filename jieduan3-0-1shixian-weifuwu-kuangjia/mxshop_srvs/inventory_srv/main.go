@@ -3,19 +3,20 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/apache/rocketmq-client-go/v2"
-	"github.com/apache/rocketmq-client-go/v2/consumer"
-	"github.com/satori/go.uuid"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/health/grpc_health_v1"
 	"mxshop_srvs/inventory_srv/handler"
 	"mxshop_srvs/inventory_srv/utils/register/consul"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	uuid "github.com/satori/go.uuid"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"mxshop_srvs/inventory_srv/global"
 	"mxshop_srvs/inventory_srv/initialize"
@@ -35,7 +36,7 @@ func main() {
 
 	flag.Parse()
 	zap.S().Info("ip: ", *IP)
-	if *Port == 0{
+	if *Port == 0 {
 		*Port, _ = utils.GetFreePort()
 	}
 
@@ -73,7 +74,8 @@ func main() {
 		consumer.WithGroupName("mxshop-inventory"),
 	)
 
-	if err := c.Subscribe("order_reback", consumer.MessageSelector{},handler.AutoReback); err != nil {
+	// 收到消息时，直接调用handler.AutoReback方法
+	if err := c.Subscribe("order_reback", consumer.MessageSelector{}, handler.AutoReback); err != nil {
 		fmt.Println("读取消息失败")
 	}
 	_ = c.Start()
@@ -86,7 +88,7 @@ func main() {
 	_ = c.Shutdown()
 	if err = register_client.DeRegister(serviceId); err != nil {
 		zap.S().Info("注销失败:", err.Error())
-	}else{
+	} else {
 		zap.S().Info("注销成功:")
 	}
 }

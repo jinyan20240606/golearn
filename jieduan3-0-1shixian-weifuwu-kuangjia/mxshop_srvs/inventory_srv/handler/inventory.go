@@ -82,7 +82,7 @@ func (*InventoryServer) Sell(ctx context.Context, req *proto.SellInfo) (*emptypb
 		Status:  1,
 	}
 	var details []model.GoodsDetail
-	// for循环拿到每个商品的库存信息
+	// for循环拿到每个商品的库存信息，构建GoodsDetail字段值
 	for _, goodInfo := range req.GoodsInfo {
 		details = append(details, model.GoodsDetail{
 			Goods: goodInfo.GoodsId,
@@ -139,6 +139,7 @@ func (*InventoryServer) Sell(ctx context.Context, req *proto.SellInfo) (*emptypb
 	sellDetail.Detail = details
 	//写selldetail表
 	if result := tx.Create(&sellDetail); result.RowsAffected == 0 {
+		// 直接回滚
 		tx.Rollback()
 		return nil, status.Errorf(codes.Internal, "保存库存扣减历史失败")
 	}
@@ -344,14 +345,17 @@ func (*InventoryServer) CancelSell(ctx context.Context, req *proto.SellInfo) (*e
 	return &emptypb.Empty{}, nil
 }
 
+// 归还库存接口：该接口应该确保幂等性，替代Reback方法可以不用了
 func AutoReback(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 	type OrderInfo struct {
 		OrderSn string
 	}
 	for i := range msgs {
-		//既然是归还库存，那么我应该具体的知道每件商品应该归还多少， 但是有一个问题是什么？重复归还的问题
-		//所以说这个接口应该确保幂等性， 你不能因为消息的重复发送导致一个订单的库存归还多次， 没有扣减的库存你别归还
-		//如果确保这些都没有问题， 新建一张表， 这张表记录了详细的订单扣减细节，以及归还细节
+		// 应该在消息中指明具体归还多少吗，不能靠消息传输它并不可靠，需要自己从表中确认
+		//既然是归还库存，那么我应该具体的知道每件商品应该归还多少， 但是有以下2个问题是什么？
+		// 1、所以说这个接口应该确保幂等性， 你不能因为消息的重复发送导致一个订单的库存归还多次，
+		// 2、没有扣减的库存你别归还
+		//如果确保这些都没有问题， 必须要新建一张表， 这张表记录了详细的订单扣减细节，以及归还细节
 		var orderInfo OrderInfo
 		err := json.Unmarshal(msgs[i].Body, &orderInfo)
 		if err != nil {
@@ -362,15 +366,21 @@ func AutoReback(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.Co
 		//去将inv的库存加回去 将selldetail的status设置为2， 要在事务中进行
 		tx := global.DB.Begin()
 		var sellDetail model.StockSellDetail
+		// 必须是查status为1 的记录，如果没有，说明已经归还过了，就直接返回消费成功
 		if result := tx.Model(&model.StockSellDetail{}).Where(&model.StockSellDetail{OrderSn: orderInfo.OrderSn, Status: 1}).First(&sellDetail); result.RowsAffected == 0 {
 			return consumer.ConsumeSuccess, nil
 		}
-		//如果查询到那么逐个归还库存
+		//如果查询到，那么逐个归还库存，更新Inventory表
 		for _, orderGood := range sellDetail.Detail {
-			//update怎么用
-			//先查询一下inventory表在， update语句的 update xx set stocks=stocks+2
+			//update怎么用更提升性能，不能先去查对应的stocks数量，再Update("stocks", stocks+orderGood.Num),这样有并发性能问题，应该更好是直接使用表达式的更新语法
+			// ❌ 错误：先查再改 -- 高并发时有超卖bug还得加乐观锁解决
+			// db.First(&inv, goods_id)
+			//inv.Stocks = inv.Stocks + num
+			//db.Save(&inv)
+			//先查询一下inventory表在， update语句的 update xx set stocks=stocks+2  数据库原子操作
 			if result := tx.Model(&model.Inventory{}).Where(&model.Inventory{Goods: orderGood.Goods}).Update("stocks", gorm.Expr("stocks+?", orderGood.Num)); result.RowsAffected == 0 {
 				tx.Rollback()
+				// 下次会重试
 				return consumer.ConsumeRetryLater, nil
 			}
 		}
