@@ -203,12 +203,15 @@ func (o *OrderListener) ExecuteLocalTransaction(msg *primitive.Message) primitiv
 	var orderInfo model.OrderInfo
 	// 反解JSON字符串为结构体
 	_ = json.Unmarshal(msg.Body, &orderInfo)
+
+	// 拿到当前grpc中web层调用传来的父级span
 	parentSpan := opentracing.SpanFromContext(o.Ctx)
 
 	var goodsIds []int32
 	var shopCarts []model.ShoppingCart
 	goodsNumsMap := make(map[int32]int32)
 	// 先查选中结算的商品是否存在
+	// 计算选中结算的商品的时间span
 	shopCartSpan := opentracing.GlobalTracer().StartSpan("select_shopcart", opentracing.ChildOf(parentSpan.Context()))
 	if result := global.DB.Where(&model.ShoppingCart{User: orderInfo.User, Checked: true}).Find(&shopCarts); result.RowsAffected == 0 {
 		o.Code = codes.InvalidArgument

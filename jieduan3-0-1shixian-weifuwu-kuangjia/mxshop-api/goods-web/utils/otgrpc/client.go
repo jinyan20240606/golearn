@@ -41,6 +41,7 @@ func OpenTracingClientInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 		opts ...grpc.CallOption,
 	) error {
 		var err error
+		// 该变量类型：从context中提取出作为父级span
 		var parentCtx opentracing.SpanContext
 
 		if parent := opentracing.SpanFromContext(ctx); parent != nil {
@@ -239,18 +240,27 @@ func (cs *openTracingClientStream) CloseSend() error {
 	return err
 }
 
+// 把当前的追踪上下文（SpanContext）注入到 gRPC 的请求元数据（Metadata）中，让服务间调用能传递追踪信息，实现全链路追踪。
 func injectSpanContext(ctx context.Context, tracer opentracing.Tracer, clientSpan opentracing.Span) context.Context {
+	// 提取 / 初始化 gRPC 元数据
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
 		md = metadata.New(nil)
 	} else {
 		md = md.Copy()
 	}
+	// 包装元数据为 OpenTracing 可写入的载体
 	mdWriter := metadataReaderWriter{md}
-	err := tracer.Inject(clientSpan.Context(), opentracing.HTTPHeaders, mdWriter)
+	// 追踪器把 SpanContext 序列化成 key:value 字符串，写入 gRPC 元数据
+	err := tracer.Inject(
+		clientSpan.Context(),    // 要传递的追踪上下文
+		opentracing.HTTPHeaders, // 序列化格式
+		mdWriter,                // 写入目标：gRPC元数据
+	)
 	// We have no better place to record an error than the Span itself :-/
 	if err != nil {
 		clientSpan.LogFields(log.String("event", "Tracer.Inject() failed"), log.Error(err))
 	}
+	// 生成携带追踪信息的新上下文；后续 gRPC 调用会自动带上这个上下文，追踪信息就传给下游了。
 	return metadata.NewOutgoingContext(ctx, md)
 }

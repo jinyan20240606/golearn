@@ -960,12 +960,23 @@ OpenTracing 标准的3大核心概念
 
 #### 2-3 go下通过grpc发送span消息
 
-- 使用开源的 gRPC + OpenTracing 集成库（自动帮你处理Inject/Extract/父子Span）三方库：`github.com/opentracing/opentracing-go`
-- 三方库源码包见：`jieduan5-分布式系统核心、微服务的部署/jaeger_test/otgrpc` 目录
+- 使用开源的 gRPC + OpenTracing 集成库（自动帮你处理Inject/Extract/父子Span）三方库
+  - 三方库源码包见：`jieduan5-分布式系统核心、微服务的部署/jaeger_test/otgrpc` 目录
 - 使用时，本地模拟一个grpc环境，集成这个三方库
   - 先启动 `jieduan5-分布式系统核心、微服务的部署/jaeger_test/server`server服务，再从client触发调用
-  - 我们只需要在client端的拦截器中加上包提供的拦截tracer即可
-    -  拦截器中间件： grpc.WithUnaryInterceptor
+  - 我们只需要在client端的拦截器中加上otgrpc包提供的拦截器中间件即可
+    -  拦截器中间件：`otgrpc.OpenTracingClientInterceptor`，下面为大概内部流程
+    -  1. 创建Span
+    -  2. 建立父子关系
+    -  3. Inject 把追踪信息（trace-id、span-id）放入gRPC Header请求头，发给服务端
+       -  具体服务端怎么使用这些元数据，还得去服务端改造集成追踪系统
+    -  4. 当每个grpc请求响应完成后，自动计时、自动结束、自动上报
+ -  grpc的服务端也需要配合改造
+    -  集成服务端的拦截器插件，内部大概流程如下：
+    -  1. Extract：从 gRPC 请求头 Metadata 里取出 客户端传过来的 TraceID、SpanID
+    -  2. 创建服务端 Span：把客户端 Span 当作父Span，建立 父子关系
+    -  3. 把这个 Span 放进 ctx，后续业务代码可以继续用（比如调用DB、Redis）
+    -  4. 业务逻辑执行完 → 自动结束 Span、自动计时、自动记录错误、自动上报 Jaeger
 
 #### 2-4 gin中添加拦截器实现jaeger注入
 
@@ -1052,6 +1063,29 @@ func InitJaeger() {
   - 去核心兼容从上下文中解析不同的tracer
 - 改动位置见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/utils/otgrpc/client.go`
 
+#### 2-6 配置订单服务的web层逻辑
+
+1. 也在utils下拷贝`otgrpc`这个三方库源码
+2. 等等重复商品服务的相关改动，具体见代码，实现链路追踪集成
+
+#### 2-7 grpc集成opentracing的原理
+
+从`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/utils/otgrpc/client.go`入口看下源码
+-  
+
+#### 2-8 grpc的server端如何获取客户端的span
+
+先见改动这个订单微服务`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/order_srv`
+
+1. 先在`order_srv/utils`下先添加otgrpc三方库开源包
+2. 在`order_srv/main` 下 注册服务端的otgrpc拦截器到grpc中
+3. 在`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/order_srv/handler/order.go`的CreateOrder的ExecuteLocalTransaction本地事务期间
+   1. 直接通过`parentSpan := opentracing.SpanFromContext(o.Ctx)`,拿到web服务层传过来的parentSpan
+   2. 然后各种数据库，跨服务的相关操作都记录下span时间，关联到这个parentSpan中
+4. 现在遇到一个问题，接入后，consul的服务健康检查也会自动追踪，导致频繁有很多trace，咋办，还得去改源码
+   1. 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/order_srv/utils/otgrpc/server.go`的OpenTracingServerInterceptor方法源码修改
+5. 最终效果依然是树形的，从web-服务层到grpcsrv层一条链路，很清晰
+   1. 注意，grpc方法名：Order/CreateOrder 这个有2个Span，这是支持的，因为客户端装的otgrpc拦截器插件会创建一个，server端的otgrpc拦截器插件也会初始自动创建一个
 ### 3章 熔断限流sentinel
 
 

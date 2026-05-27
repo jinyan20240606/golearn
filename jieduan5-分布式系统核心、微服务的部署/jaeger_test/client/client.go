@@ -50,10 +50,12 @@ func main() {
 	// 这是 gRPC 客户端拦截器，**自动帮你完成：
 	// 1. 创建Span
 	// 2. 建立父子关系
-	// 3. Inject 把TraceID放入gRPC Header
-	// 4. 自动上报耗时、状态
+	// 3. Inject 把追踪信息（trace-id、span-id）放入gRPC Header请求头，发给服务端
+	// // ---- 具体服务端怎么使用这些元数据，还得去服务端改造集成追踪系统
+	// 4. 当每个grpc请求响应完成后，自动计时、自动结束、自动上报
 	conn, err := grpc.Dial("127.0.0.1:50051", grpc.WithInsecure(),
 	// ✅ 核心：gRPC 自动链路追踪拦截器
+	// 它是 gRPC 客户端的一个 “中间件”，在你发起 gRPC 请求的前后，自动完成分布式追踪的所有脏活累活：创建 span、注入 trace、计时、结束、上报。
 		grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()))
 	)
 	if err != nil {

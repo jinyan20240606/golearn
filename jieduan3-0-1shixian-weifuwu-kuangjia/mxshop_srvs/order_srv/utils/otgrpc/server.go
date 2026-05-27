@@ -14,9 +14,9 @@ import (
 //
 // For example:
 //
-//     s := grpc.NewServer(
-//         ...,  // (existing ServerOptions)
-//         grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer)))
+//	s := grpc.NewServer(
+//	    ...,  // (existing ServerOptions)
+//	    grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer)))
 //
 // All gRPC server spans will look for an OpenTracing SpanContext in the gRPC
 // metadata; if found, the server span will act as the ChildOf that RPC
@@ -33,7 +33,9 @@ func OpenTracingServerInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (resp interface{}, err error) {
+		// 判断是否是健康检查，如果是微服务的监控检查不需要追踪，否则有很多无用的健康检查记录
 		if info.FullMethod != "/grpc.health.v1.Health/Check" {
+			// 提取grpc的元数据中的客户端传入的父级上下文
 			spanContext, err := extractSpanContext(ctx, tracer)
 			if err != nil && err != opentracing.ErrSpanContextNotFound {
 				// TODO: establish some sort of error reporting mechanism here. We
@@ -50,11 +52,12 @@ func OpenTracingServerInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 				gRPCComponentTag,
 			)
 			defer serverSpan.Finish()
-
+			// 将serverSpan注入进去
 			ctx = opentracing.ContextWithSpan(ctx, serverSpan)
 			if otgrpcOpts.logPayloads {
 				serverSpan.LogFields(log.Object("gRPC request", req))
 			}
+			// 注入到handler中
 			resp, err = handler(ctx, req)
 			if err == nil {
 				if otgrpcOpts.logPayloads {
@@ -68,7 +71,7 @@ func OpenTracingServerInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 				otgrpcOpts.decorator(serverSpan, info.FullMethod, req, resp, err)
 			}
 			return resp, err
-		}else{
+		} else {
 			resp, err = handler(ctx, req)
 			return resp, err
 		}
@@ -82,9 +85,9 @@ func OpenTracingServerInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 //
 // For example:
 //
-//     s := grpc.NewServer(
-//         ...,  // (existing ServerOptions)
-//         grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer)))
+//	s := grpc.NewServer(
+//	    ...,  // (existing ServerOptions)
+//	    grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer)))
 //
 // All gRPC server spans will look for an OpenTracing SpanContext in the gRPC
 // metadata; if found, the server span will act as the ChildOf that RPC
