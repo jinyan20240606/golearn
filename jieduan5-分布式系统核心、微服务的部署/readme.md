@@ -1194,4 +1194,14 @@ func InitJaeger() {
 - `jieduan5-分布式系统核心、微服务的部署/sentinel_test/breaker/error_count`
 #### 3-8 sentinel的熔断接口--基于错误率和慢请求
 - `jieduan5-分布式系统核心、微服务的部署/sentinel_test/breaker`
+#### 3-9 gin集成sentinel实现限流
+
+
+我们在一个接口中做个例子即可，选择在商品列表页接口:`goods-web/api/goods/goods.go`List方法
+
+
+1. 先在这里初始化sentinel:`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/initialize/sentinel.go`
+2. 再在商品列表页接口:`goods-web/api/goods/goods.go`List方法中加限流的安检口Entry方法
+   1. 易混淆点：它限流使用逻辑是，自定注册个资源名，然后调用资源名，相当于只是个安检口，不需要把你的接口的逻辑写到这个方法里，这个方法只是个安检口，安检口写在你的业务接口中任意地方都可以，只要安检口没通过，直接就返回错误了，业务自行判断退出
+
 ## 20周 api网关，部署

@@ -6,7 +6,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func InitSentinel(){
+func InitSentinel() {
 	err := sentinel.InitDefault()
 	if err != nil {
 		zap.S().Fatalf("初始化sentinel 异常: %v", err)
@@ -19,8 +19,8 @@ func InitSentinel(){
 			Resource:               "goods-list",
 			TokenCalculateStrategy: flow.Direct,
 			ControlBehavior:        flow.Reject, //匀速通过
-			Threshold:              20,             //100ms只能就已经来了1W的并发， 1s就是10W的并发
-			StatIntervalInMs:       6000,
+			Threshold:              20,          //qps阈值：每秒抗20个请求
+			StatIntervalInMs:       6000,        // 统计窗口
 		},
 	})
 

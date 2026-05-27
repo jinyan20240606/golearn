@@ -123,6 +123,8 @@ func List(ctx *gin.Context) {
 	//parent, _ := ctx.Get("parentSpan")
 	//opentracing.ContextWithSpan(context.Background(), parent.(opentracing.Span))
 
+	// 使用sentinel做限流操作
+	// 限流检查，就是在业务接口内部任意个地方加个安检口
 	e, b := sentinel.Entry("goods-list", sentinel.WithTrafficType(base.Inbound))
 	if b != nil {
 		ctx.JSON(http.StatusTooManyRequests, gin.H{
