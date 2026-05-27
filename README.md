@@ -27,6 +27,7 @@
       1. `func callback(msgs ...*MessageExt) ` msgs就是可变参数类型的变量
    3. 传值用：表示代表把切片打散，一个个传进去，作为值用
       1. `callback(msgList...) // ✅ 正确！打散切片传入`
+5. go中的存在多个defer时，defer的执行顺序是后进先出，最后一个定义的defer先执行
 
 ### 数据库相关
 

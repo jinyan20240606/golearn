@@ -130,6 +130,15 @@ func List(ctx *gin.Context) {
 		})
 		return
 	}
+	// Trace解法1: 【父子关联】单纯解决web层父级span传递到grpc-srv层，进行父子关系关联
+	// parentSpan, _ := ctx.Get("parentSpan")
+	// span := parentSpan.(opentracing.Span)
+	// // 关键：把当前 span 存入新的 context
+	// newCtx := opentracing.ContextWithSpan(context.Background(), span)
+	// 用带了链路的 context 调用 gRPC
+	// r, err := global.GoodsSrvClient.GoodsList(newCtx, request)
+
+	// Trace解法2:下面是采用直接传递完整上下文，然后修改grpc拦截器源码的方式实现的
 	r, err := global.GoodsSrvClient.GoodsList(context.WithValue(context.Background(), "ginContext", ctx), request)
 	if err != nil {
 		zap.S().Errorw("[List] 查询 【商品列表】失败")

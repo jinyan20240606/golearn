@@ -1,18 +1,15 @@
 package otgrpc
 
 import (
-	"io"
-	"runtime"
-	"sync/atomic"
-
-	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/opentracing/opentracing-go/log"
-	jaegerClient "github.com/uber/jaeger-client-go"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"io"
+	"runtime"
+	"sync/atomic"
 )
 
 // OpenTracingClientInterceptor returns a grpc.UnaryClientInterceptor suitable
@@ -20,10 +17,10 @@ import (
 //
 // For example:
 //
-//	conn, err := grpc.Dial(
-//	    address,
-//	    ...,  // (existing DialOptions)
-//	    grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(tracer)))
+//     conn, err := grpc.Dial(
+//         address,
+//         ...,  // (existing DialOptions)
+//         grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(tracer)))
 //
 // All gRPC client spans will inject the OpenTracing SpanContext into the gRPC
 // metadata; they will also look in the context.Context for an active
@@ -42,23 +39,9 @@ func OpenTracingClientInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 	) error {
 		var err error
 		var parentCtx opentracing.SpanContext
-
 		if parent := opentracing.SpanFromContext(ctx); parent != nil {
 			parentCtx = parent.Context()
 		}
-
-		// 这块就是改动的源码部分
-		ginContext := ctx.Value("ginContext")
-		switch ginContext.(type) {
-		case *gin.Context:
-			if itracer, ok := ginContext.(*gin.Context).Get("tracer"); ok {
-				tracer = itracer.(opentracing.Tracer)
-			}
-			if parentSpan, ok := ginContext.(*gin.Context).Get("parentSpan"); ok {
-				parentCtx = parentSpan.(*jaegerClient.Span).Context()
-			}
-		}
-
 		if otgrpcOpts.inclusionFunc != nil &&
 			!otgrpcOpts.inclusionFunc(parentCtx, method, req, resp) {
 			return invoker(ctx, method, req, resp, cc, opts...)
@@ -96,10 +79,10 @@ func OpenTracingClientInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 //
 // For example:
 //
-//	conn, err := grpc.Dial(
-//	    address,
-//	    ...,  // (existing DialOptions)
-//	    grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(tracer)))
+//     conn, err := grpc.Dial(
+//         address,
+//         ...,  // (existing DialOptions)
+//         grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(tracer)))
 //
 // All gRPC client spans will inject the OpenTracing SpanContext into the gRPC
 // metadata; they will also look in the context.Context for an active

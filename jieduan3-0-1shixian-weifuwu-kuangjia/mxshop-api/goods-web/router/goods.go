@@ -9,6 +9,9 @@ import (
 )
 
 func InitGoodsRouter(Router *gin.RouterGroup) {
+	// 给 /goods/* 所有接口统一加链路追踪
+	//每个请求都会生成一个根 Span
+	//链路结构清晰
 	GoodsRouter := Router.Group("goods").Use(middlewares.Trace())
 	// 一旦设计修改数据库都需要加上权限校验，查询类的可以不用鉴权
 	{
