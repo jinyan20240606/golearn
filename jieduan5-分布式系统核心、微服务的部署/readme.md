@@ -1537,6 +1537,224 @@ HTTPS 加密访问
 
 ### 3章 jekins入门
 
+#### 3-1 敏捷开发中的持续集成痛点
+```js
+敏捷开发：需求不固定，摸着石头过河，边做边调整
+用户故事：老板只管提功能需求，具体实现全权交给研发
+快速迭代：上线效果不佳，立刻调整页面与功能
+用户痛点：收到用户投诉，马上针对性优化整改
+拥抱变化：需求频繁变动，团队随时适配新想法
+持续交付：版本问题不断，高频提测、反复交付，手动编译部署
+结对开发：Bug 层出不穷，直接搭档协同现场联调
+代码评审：代码交叉审核，问题追溯权责到人
+弹性工作：上下班不硬性卡点，Bug 不修完不能下班
+```
+
+- Jenkins 诞生背景
+  - CI 落地痛点
+    - 早期敏捷推行持续集成，但手动编译、打包、测试、部署重复繁琐、效率低、易人为出错；多项目、多分支并行时，人工集成根本跟不上迭代节奏。
+  - 前身起源
+    - 最早源于 Hudson（Sun 公司开源 CI 工具），用于自动化构建、集成、测试，替代人工操作。
+  - Jenkins 诞生
+    - 后续社区分裂，开发者基于 Hudson 源码分支出新项目 Jenkins，完全开源、社区活跃、插件生态极强。
+  - 核心定位
+    - 专门解决持续集成 / 持续交付自动化问题，承接代码拉取、编译、检查、测试、打包、部署全流程，补齐敏捷 CI 环节的工具短板。
+
+#### 3-2 安装jekins和关闭防火墙
+
+- 部署痛点
+  - 中小企业无运维，开发自己打包、上传、重启
+  - 上线更新必须停服务，影响用户体验
+  - 频繁部署，重复劳动多、易出错、效率低
+- 为什么用 Jenkins
+  - 配置一次，永久自动化
+  - 代码提交 → 自动构建、自动部署
+  - 不用停服务、不用手动操作
+  - 开发省心、用户无感知
+  - 非常适合中小企业、无专职运维团队
+- 什么是jenkins
+  - Jenkins是一个开源的、提供友好操作界面的持续集成(CI)工具，起源于Hudson(Hudson是商用的)，主要用于持续、自动的构建/测试软件项目、监控外部任务的运行这个比较抽象
+  - Jenkins用Java语言编写，可在Tomcat等流行的servlet容器中运行，也可独立运行。通常与版本管理工具(git)、构建工具结合使用。常用的版本控制工具有SVN、GIT，构建工具有Maven、Ant、Gradle.
+- 安装
+  - **安装Jenkins一般都会单独安装在一个独立的虚拟机服务器上，不与业务服务器一起运行。**，给jekins单独配一套服务器。
+  - 先安装java运行环境
+  - 再下载jekins安装包rpm，进行安装。
+    - 安装方式：原生 RPM（推荐，无坑）
+    - 使用原生方式安装，先不用docker装，会有个小坑，嫌麻烦直接原生安装
+  - 修改jekins配置文件
+    - 改端口、用 root 运行避免权限问题
+  - 开放防火墙 8080 端口，重启服务器
+  - 启动jekins
+    - 重新加载配置 + 启动 + 开机自启
+    - systemctl daemon-reload
+    - systemctl start jenkins
+    - systemctl enable jenkins
+  - 浏览器访问jekins
+    - 获取初始管理员密码：`cat /var/lib/jenkins/secrets/initialAdminPassword`
+    - 复制出来 → 粘贴到网页 → 下一步
+
+
+#### 3-3 jekins构建服务器流程
+- 下面解释了为什么jekins需要单独配套一个构建服务器，下面介绍了，构建服务器只管构建集成相关，业务服务器只接收一个镜像或最终包即可
+![alt text](image-30.png)
+
+#### 3-4 安装jekins常用插件
+
+1. 先修改插件下载地址、
+   1. 修改default.json文件
+      1. `sed -i 's/https:\/\/updates.jenkins.io\/download/http:\/\/mirrors.tuna.tsinghua.edu.cn\/jenkins/g' /var/lib/jenkins/updates/default.json && sed -i 's/http:\/\/www.google.com/https:\/\/www.baidu.com/g' /var/lib/jenkins/updates/default.json`
+   2. 然后进入jekins页面的Manage Jenkins → Manage Plugins → Advanced，里将UpdateSite设置为http://mirrors.tuna.tsinghua.edu.cn/jenkins/updates/update-center.json
+   3. 重启jekins，只需要在页面中输入http://192.168.0.104:8088/restart 重启
+2. 安装常用
+   1. 汉化插件
+   2. ssh Credentials 插件
+      1. 作用：专门用来在 Jenkins 里安全保存 SSH 远程服务器的登录凭证，替代明文写账号、密码、私钥
+      2. 统一管理：一台 Jenkins 对接多台服务器时即SSH Credentials 添加一台 / 多台服务器登录信息，凭证只配置一次，所有任务复用。
+      3. 后续所有需要 SSH 登录远程机器的插件 / 任务（SSH Plugin、Publish Over SSH 等），都直接引用这里的存储的凭证，不用重复填账号密码。
+   3. ssh插件：会 SSH 的命令行工具
+      1. 基于 SSH 协议，调用已保存的凭证，远程登录目标服务器，并执行操作，是真正干活的插件。
+      2. 主要能力
+         1. 远程执行 shell 命令
+         2. 简单文件上传（SCP）
+      3. 特点
+         1. 配置简单、轻量
+         2. 没有专门的 “构建后发布” 界面
+         3. 不适合复杂的 “打包→上传→部署” 流水线
+      4. 典型场景：主要放在「构建步骤」里的命令脚本作为命令使用。
+         1. 构建前在远程服务器清个目录
+         2. 执行一句简单命令（重启、备份）
+         3. 一句话：SSH 插件 = 远程命令工具
+   4. Send build artifacts over SSH 插件
+      1. 能干啥：基于ssh插件做的封装好的一套发布工作流
+         1. 专门做构建产物上传（SFTP/SCP）
+         2. 【构建后操作】步骤直接集成这个插件
+         3. 传文件 + 执行命令一体化
+         4. 全局统一管理多台服务器，项目里直接选
+   5. git插件：让 Jenkins 能拉取 / 管理 Git 代码，并支持自动触发构建
+3. 大致流程
+   1. 开发 push 代码到 GitLab → WebHook 触发 Jenkins。
+   2. Git 插件 → 拉取最新代码到 Jenkins 工作空间。
+   3. Jenkins 编译 / 打包（如 jar、docker 镜像）。
+   4. SSH 插件 → 用 SSH Credentials 凭证登录生产服务器。
+   5. 上传包、停止旧服务、启动新服务 → 完成部署。
+#### 3-5 通过freestyle构建项目的基本步骤流程
+
+1. 新建自由风格项目即默认简单模式
+2. 源码管理配置 Git，绑定仓库与凭证
+3. 设置构建触发器（轮询 / WebHook）
+4. 配置构建环境（可选）
+5. 添加构建步骤，执行编译 / 打包
+   1. 编写shell脚步命令
+6. 构建后操作：SSH 上传文件、远程部署到业务服务器上
+7. 保存配置
+8. 手动触发构建，查看运行结果
+
+#### 3-6 将构建服务器上的代码上传到运行服务器上
+
+- 看下如何把构建好的代码自动上传到运行服务器上并运行
+- 主要是在构建后操作这个步骤中去设置
+- 需要先安装个插件：`Send build artifacts over SSH`
+  - 这个插件是jekins链接linux系统的时候使用的，以下针对插件的每个属性进行说明
+- 然后在构建后步骤中选择这个插件的选项，直接配置`ssh server`,
+  - `ssh server`的列表默认空，需要单独去另个配置管理页面添加ssh server列表，配置我们的一些业务服务器
+  - ![alt text](image-31.png)
+  - 选择后还需要配置`ssh server`的属性
+    - name：系统配置里提前配好的远程服务器
+    - Source files：你要把 Jenkins 里的哪些文件，传到远程服务器
+      - 相对于当前项目的「工作空间」根目录，不需要写绝对路径，只写相对路径！
+      - 你的项目在 Jenkins 里的目录是：`/var/lib/jenkins/workspace/你的项目名/`,Source files 就是从这个目录开始找文件！
+      - 如前端写法：`dist/**`
+    - Remove prefix = 不传目录,只传文件，不传目录结构
+      - 如果你传 target/*.jar，但不想在服务器创建 target 文件夹
+      - 这里就填：target
+    - Remote directory = 服务器路径
+      - 最终路径 = 服务器登录后的默认目录 + Remote directory
+    - Exec command = 上传完运行
+
+
+#### 3-7 通过pipline实现持续集成
+
+> pipline模式相比freestyle模式更高级一些门槛高一些。
+
+- 之前安装git插件后，新建任务时，会自带一个流水线pipline出来，我们可以基于这个pipline，实现持续集成
+- 把你之前在 Freestyle（自由风格）页面上点来点去的配置，变成一段代码，存进项目里，可版本管理、可复制、可复用。
+- 用pipline流水线时，还需要再装一个插件：`pipline`插件
+
+- Jenkins Pipeline 是Jenkins 自己实现的流水线插件，基于 Groovy 实现的 CI/CD 专用 DSL（领域专用语言）
+- 主要分两种写法：
+  - 1. Declarative Pipeline（声明式，推荐 99% 用这个）,像写配置文件一样（如travis.yml、gitlab-ci.yml）
+  - 2. Scripted Pipeline（脚本式，老版本用）
+- 优点
+  - 1. 代码即配置
+    - 构建流程写在代码里，提交到 Git，不会丢失。
+  - 1. 可复用、可复制
+    - 一个项目的流水线，复制到另一个项目直接用。
+  - 1. 流程可视化
+    - 每一步构建都能看到：
+  - 拉代码→编译→扫描→打包→上传→部署
+    - 哪一步错了一目了然。
+  - 1. 支持复杂逻辑
+    - 多环境、多服务器、并行构建、条件判断……
+    - Freestyle 做不到的，Pipeline 都能做。
+- 然后点击流水线任务里进去一行行配置，主要是配置流水线的脚本
+```js
+// 例如在pipeline的流水线配置项里选的Pipline script模式，直接在页面里书写配置的
+pipeline {
+    agent any          // 在任何节点执行
+    stages {           // 所有步骤都在这里
+        
+        stage('拉代码') {
+            steps {
+                git url: '仓库地址', branch: 'main', credentialsId: '凭证ID'
+            }
+        }
+
+        stage('编译打包') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+
+        stage('发布到服务器') {
+            steps {
+                sshPublisher(...)  // 就是你之前用的 Publish Over SSH
+            }
+        }
+    }
+}
+```
+#### 3-8 通过jekinsfile管理构建pipline脚本
+
+
+- 直接在项目根目录下创建一个jekinsfile文件，内容与上面的pipeline页面脚本内容一样，
+- 然后pipeline的流水线配置项里，选择Pipline Script From SCM，选择SCM为Git，填写项目地址，选择分支，选择jekinsfile文件，保存。
+
+
+#### 3-9 通过远程和其他工程触发构建
+
+前面的演示中，都是创建任务后，自己手动点击进行构建的，我们这节演示下通过钩子自动触发构建
+![alt text](image-33.png)
+
+流水线的配置中【构建触发器】，有哪几种类型，下面逐一讲解：
+- 1. 通过远程触发
+  - 1. 通过 Jenkins API
+    - 通过 Jenkins API，可以调用 Jenkins 的 REST API，实现远程触发构建。
+  - 1. 通过 Jenkins Webhook
+    - Jenkins Webhook 是 Jenkins 提供的一种触发构建的方式，可以将 Jenkins 与外部系统集成，实现远程触发构建。
+- 2. 通过其他工程触发构建
+
+#### 3-10 定时构建和轮询scm构建
+流水线的配置中【构建触发器】，接着讲剩余2种类型，下面逐一讲解：
+1. 定时构建：需要使用专门的定时构建语法编写页面上的配置
+2. 轮询scm构建：定时去 Git 检查代码有没有更新，有更新才构建，没更新就不构建。
+
+#### 3-11 参数化pipline构建项目
+![alt text](image-32.png)
+- 勾选后，选择字符参数进行配置，填写key-value
+- 相当于设置好流水线json里的环境变量
+- 在项目源码的流水线json里使用这些环境变量：![alt text](image-34.png)
 ### 4章 通过jekins部署服务
+
+#### 4-1 有哪些服务器我们需要部署？
 
 ### 5章 课程总结
