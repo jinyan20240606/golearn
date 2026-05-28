@@ -1214,3 +1214,329 @@ func InitJaeger() {
 - 建议：对外、对内的通用限流，放网关；只有需要和业务强绑定的精细限流，才放接口里。
 
 ## 20周 api网关，部署
+
+### 1章 kong的安装和配置
+
+#### 1-1 什么是api网关
+
+- 之前web页面访问电商微服务是直接在js中写的多个微服务的端口号，想加个API网关统一管理入口，最开始想到的是nginx
+  - 但是nginx有个缺点：无法动态化配置，如果想新增微服务或者改个端口号，必须得重启nginx，缺乏动态化免重启的能力
+    - 还不支持服务发现的功能
+  - 还需要个统一的限流管理功能
+#### 1-2 api网关应该具备的基本功能有哪些
+![alt text](image-19.png)
+1. 动态路由
+2. 限流管理
+3. 负载均衡
+4. 服务发现
+   1. 向注册中心进行服务发现，统一获取所有机器实例
+5. 熔断降级管理
+6. 流量管理
+   1. 黑白名单
+   2. 反爬策略
+
+#### 1-3 api网关技术选型
+
+总共有3种生态：
+1. go语言开发的
+2. java开发
+3. 基于nginx的
+![alt text](image-21.png)
+
+- 补充：
+  - Spring Cloud Gateway：基于java-springboot开发的
+  - Envoy：基于C++
+  - Traefik（Go，K8s ingress）：语言：Go
+    - 特点：K8s 自动服务发现、零配置 ingress
+    - 适合：K8s 集群内部入口、简单场景、不想复杂配置
+
+
+
+- 我们课程中使用的就是kong：基于nginx+lua脚本开发的
+
+#### 1-4 kong的安装
+
+1. 核心定位
+   1. Kong 是开源 API 网关，部署在上游业务服务前端。
+   2. 所有客户端请求先经过 Kong，再转发到后端服务；可以在转发前统一实现通用能力，不用改后端业务代码。
+2. 技术底座
+   1. 底层基于 OpenResty（Nginx + LuaJIT）
+      1. 继承了 Nginx 高性能、高并发、高稳定的特性，Lua 用来实现动态插件、业务逻辑扩展。
+   2. 依赖存储：PostgreSQL / Cassandra
+      1. 用来持久化网关配置、路由、插件规则、上游服务信息，集群多节点会共享这份配置。
+3. 配置方式
+   1. 提供 RESTful API 做全量配置管理，不用改配置文件、不用重启服务，运维便捷。
+4. 集群与扩容，支持水平扩展：
+   1. 部署多台 Kong 节点，通过前端搭配负载均衡（LVS/NGINX/ 云负载均衡）分发流量到各个微服务Server，轻松应对高并发请求。
+
+**使用docker安装**：
+- DB-less（无数据库，简单测试 / 开发推荐）
+- PostgreSQL 模式（生产 / 集群推荐）
+
+```yaml
+# 这份配置文件，仅供参考AI写的
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: kong-database
+    networks:
+      - kong-net
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: kong
+      POSTGRES_DB: kong
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kong"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  kong-migrations:
+    image: kong:3.7
+    container_name: kong-migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - kong-net
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong
+    command: kong migrations bootstrap
+    restart: on-failure
+
+  kong:
+    image: kong:3.7
+    container_name: kong-gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kong-migrations:
+        condition: service_completed_successfully
+    networks:
+      - kong-net
+    volumes:
+      # 挂载你的自定义配置文件
+      - ./config/kong.conf:/etc/kong/kong.conf
+    # 关键：指定用这个配置文件启动
+    command: kong start -c /etc/kong/kong.conf
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+      - "8001:8001"
+
+networks:
+  kong-net:
+
+volumes:
+  postgres_data:
+```
+
+1. 启动后，先验证下数据库是否启动好，是否能数据库链接工具链接成功，如用navcat链接postgresql
+2. 安装kong，用docker安装kong，必须使用到docker的网络，因为要调用很多依赖服务如consul服务，他们都是通过网络来调用的，所以需要使用docker的网络
+3. 如果对docker网络不熟的话，建议还是前期先安装在主机上
+4. 安装教程可以参考：https://www.cnblogs.com/young-q/p/17177068.html
+5. 关闭防火墙，重启docker容器
+6. 修改kong的配置文件
+   1. ![alt text](image-20.png)
+   2. 这块dnsresolver配置用于连接consul的dns链接地址和其他的adminlisten和proxylisten也需要打开，需要也配置
+7. 启动kong，指定配置文件启动即可
+8. 验证是否启动成功
+   1. 访问8001和8000端口，成功返回数据就算启动成功了
+9. 最后再安装konga：`docker run -d -p 1337:1337 --name konga pantsel/konga`
+   1.  GUI前端管理页面，访问1337端口号即可
+
+### 2章 kong的配置
+
+#### 2-1 kong的8001、8000和1337端口号的关系
+
+1. 8001：kong的admin的端口
+2. konga管理页面首次进入时，需要配置kong服务的链接实例，这个实例的链接就是8001端口，一个konga界面可以链接多个kong服务实例
+3. 一定要检查info菜单里的dnsresolver是否与配置的一样，否则后面consul集成时会失败
+
+**端口号讲解**：
+![alt text](image-22.png)
+1. 8000 端口（用户 / 前端访问用）
+作用：网关入口
+用户 / 前端 / 小程序 → 请求 http://localhost:8000/xxx
+经过 Kong 转发 → 你的 Gin 服务
+这是对外提供服务的端口。
+2. 8001 端口（管理员 / 配置用）
+作用：Kong 管理 API,给你运维、配置用的端口
+你用它添加路由、添加限流、添加服务、查看状态
+`curl http://localhost:8001/services`
+3. 8443 端口（HTTPS 用）
+HTTPS 加密访问
+作用：也是网关入口
+用户 / 前端 / 小程序 → 请求 https://localhost:8443/xxx
+4. 1337：**Konga（Web UI）** 的端口，浏览器访问用
+
+
+- 后面流程：访问 http://localhost:8001 → 看 Kong 是否启动成功
+  - 添加一个 Service（指向你的 Gin 服务）
+  - 添加一个 Route（用户访问路径）
+  - 开启 限流插件
+
+#### 2-2 基本的路由转发配置即动态路由
+
+- konga中最重要的2个概念：Service（服务）和 Route（路由）
+- services:
+  - Service顾名思义,就是我们自己定义的上游服务,通过Kong匹配到相应的请求要转发的地方，Service可以与下面的Route进行关联一个Service可以有很多Route,匹配到的Route就会转发到Service中，当然中间也会通过Plugin的处理,增加或者减少一些相应的Header或者其他信息.
+    - 一个service可以有多个route
+- Routes:Route 路由相当于nginx 配置中的location，Route实体定义匹配客户端请求的规则.每个路由都与一个服务相关联,而服务可能有多个与之相关联的路由.每一个匹配给定路线的请求都将被提交给它的相关服务.
+- Service（服务）
+  - 代表一个后端服务（比如 user-service）
+  - 核心是：我要代理到哪里去
+  - 配置方式二选一：
+  - 简单：直接写死 host + port（单实例）
+  - 集群：host 写 Upstream 的名字（多实例、负载均衡）
+  - 可以理解成：给后端服务起个名字、定个入口。
+- Upstream（上游）
+  - 是一个虚拟主机名，下面挂一堆 Target（IP: 端口），一个service对应一个upstream，一个upstream对应多个某服务的实例
+  - 专门负责：负载均衡、健康检查、故障转移
+  - 例如：
+  - Upstream 名叫 user-upstream
+  - Target：192.168.1.10:8080、192.168.1.11:8080
+  - 可以理解成：一个负载均衡器，管理一群真实节点。
+- 路由和服务的组合(以及它们之间的关注点分离)提供了一种强大的路由机制，可以在Kong中定义细粒度的入口点,从而引导您的访问到不同upstream服务.
+
+
+
+- 创建服务的配置弹窗，如创建一个商品的web服务
+  - ![alt text](image-23.png)
+- 创建后，点击进入服务，配置它的routes
+  - ![alt text](image-24.png)
+- 配置后，直接访问统一http://localhost:8000/端口就能自动映射到刚才配置的商品web服务里
+
+#### 2-3 kong的service、route和upstream
+
+- service：是一个抽象服务层，用于指向具体的物理服务，也可以指向upstream实现物理服务的负载均衡
+  - 一个service对应一个upstream，一一对应关系，一个upstram对应多个物理服务的target
+- upstream可以负载均衡，健康检查等，我们之前已经用consul自带的健康检查，所以我们就需要负载均衡，
+  - 后面可以考虑upstream如何与consul进行绑定，自动获取所有微服务的地址
+
+#### 2-4 kong集成consul实现服务发现和负载均衡
+
+将consul集成进来
+1. 利用到kong中配置的dnsresolver了，Kong 配好 dns_resolver=consul:8600，Service 的 host 直接写consul分配的 `服务名.service.consul`，就能自动做服务发现 + 负载均衡，不需要手动建 Upstream
+   1. ![alt text](image-25.png)
+   2. Kong 收到 xxx.service.consul：
+   3. 向 Consul DNS 查 SRV 记录 → 拿到所有实例 IP:port
+   4. 自动做轮询负载均衡
+   5. 实例下线自动摘除（依赖 Consul 健康检查）
+
+#### 2-5 kong配置jwt实现登录校验
+
+利用kong的插件机制官方插件市场中有很多插件，可以增强功能，本节讲下jwt插件的集成，业务的服务就不用再做登录校验了
+
+- **consumer概念**
+  - Consumer = 给调用你接口的 “客户端 / 用户”做个标记，只要是向 Kong 发请求的一方，都可以定义成 Consumer
+  - 就是：谁在用你的 API，比如：
+    - 移动端 APP
+    - 网页前端
+    - 第三方服务
+    - 后台用户
+  - 每个 Consumer 对应一个独立身份，方便网关区分 “是谁在调用”
+  - 作用背景：
+    - 如：普通 APP：10 次 / 秒，管理员后台：100 次 / 秒，第三方合作方：5 次 / 小时
+    - **没有 Consumer → 你无法区分谁是谁，只能全部统一限流，非常不灵活。**
+  - 必须先创建用户（Consumer），再发卡（JWT 密钥）
+
+**具体jwt例子使用**
+1. 先创建一个consumer客户端身份，起个mxshop的名字
+   1. ![alt text](image-26.png)
+2. 进入该consumer详情中，点击credential模块下，点击创建jwt，只需要自己设置key，密钥它自己生成
+   1. ![alt text](image-27.png)
+   2. 当你在 Kong 里：创建一个 Consumer（例如 web-user），给这个 Consumer 添加 JWT 凭证时，这个凭证只会应用在这个consumer下
+   3. 你给它创建 JWT 凭证时，必须手动填：key = my-shop-key
+      1. 这个key就是 JWT 里的 iss参数
+      2. Kong 自动基于这个key生成：验签密钥secret = xxxxxx，附加在专属于consumer下的 JWT 凭证里，用于验签
+   4. 原理：我发起一个带token的网关请求，它怎么知道我是属于哪个consumer，内部咋对应的？？？
+      1. 请求带 Token → 网关 JWT 插件解析
+         1. → 拿出 Token 里的 `iss = my-shop-key`
+            1. 生成测试token时，也需要带上key去生成
+         2. → 去数据库找：哪个 Consumer 的 JWT 凭证 key == my-shop-key
+         3. → 找到了！就是 mxshop 这个用户
+         4. → 用这个 Consumer 对应的 secret 验签
+         5. → 验签通过 → 放行 
+3. 配置全局的plugin：去往插件菜单中，添加一个全局插件，添加jwt插件
+   1. 插件的配置界面配置个header头如x-token，和我们gin中代码保持一致这个名字
+4. 在jwt.io在线生成个token，用于测试
+   1. 生成时记得paylaod中添加iss值，和刚才生成的密钥
+5. 现在出现个问题，api网关的jwt验证和ginweb-服务也有jwt认证，会出现api网关验证通过了，但是gin-web服务没有验证通过？？
+   1. 因为两边的密钥不一致，所以验证不通过： Kong 创建 JWT 时，不要让它自动生成，手动填一个固定 secret
+   2. 还有`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/user-web/api/user.go`的`Issuer:"imooc"`, 一定要与api网关中配置一样
+
+
+#### 2-6 kong配置反爬和ip黑白名单
+
+- 主要使用kong不同插件实现
+- 常见插件及作用：认证 / 安全 / 流量 / 转换 / 可观测 / 日志 / 扩展七大块
+
+一、认证鉴权
+1. **jwt**：校验JWT令牌，网关统一登录鉴权
+2. **key-auth**：API密钥认证，多用于服务间调用
+3. **basic-auth**：账号密码简易认证
+4. **oauth2**：三方授权登录
+
+二、安全防护
+1. **cors**：处理跨域请求
+2. **ip-restriction**：IP黑白名单，控制IP / 网段黑白名单 → 访问权限
+3. **ACL**：控制用户 / 组（admin/user/third）→ 接口权限
+   1. ACL = 访问权限控制，控制哪些 Consumer（用户 / 客户端）能访问哪些服务 / 接口
+   2. 用户分组：普通用户 / 管理员 / 第三方应用
+   3. 权限隔离：
+      1. 管理员 → 可访问所有接口
+      2. 普通用户 → 只能访问业务接口
+      3. 第三方 → 只能访问开放接口
+4. 组合场景：
+   2. JWT + ACL：登录后按用户组放行接口
+   3. ip-restriction + ACL：
+      1. 先 IP 过滤（只允许内网 / 办公网）
+      2. 再 ACL 校验（只允许 admin 组）
+5. bot-detection（机器人反爬）
+   1. 作用：靠 User-Agent 识别爬虫 / 扫描器 / 恶意 Bot
+   2. 原理：内置 200 + 规则库，匹配 UA 特征；可自定义黑白名单
+   3. 配置
+      1. allow：放行（如 Googlebot、Bingbot）
+      2. deny：拦截（如 scrapy、sqlmap、curl、python-requests）
+      3. 一句话：拦爬虫、扫描器，靠 UA 识别
+
+
+三、流量管控
+1. **rate-limiting**：接口限流，防刷防压
+2. **request-size-limiting**：限制请求体大小
+3. **proxy-cache**：缓存响应，减轻后端压力
+
+四、请求/响应转换
+1. **request-transformer**：增删改请求头、参数（透传用户信息核心插件）
+2. **response-transformer**：统一修改返回数据、响应头
+
+五、监控&链路
+1. **prometheus**：暴露监控指标，对接监控平台
+2. **correlation-id**：生成请求唯一ID，日志链路追踪
+3. **zipkin/jaeger**：分布式链路追踪
+
+六、日志
+- **file-log / http-log**：请求日志落地、推送至日志平台
+
+七、自定义扩展
+- **function**：执行Lua自定义脚本，实现个性化逻辑
+
+##### **实践演示**
+1. 配置一个机器人反爬插件，添加到全局插件，也可以添加到consumer级别
+   1. ![alt text](image-28.png)
+2. ip黑名单插件：
+   1. ![alt text](image-29.png)
+
+### 3章 jekins入门
+
+### 4章 通过jekins部署服务
+
+### 5章 课程总结
