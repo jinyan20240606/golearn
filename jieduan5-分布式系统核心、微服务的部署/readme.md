@@ -1697,31 +1697,47 @@ HTTPS 加密访问
     - 多环境、多服务器、并行构建、条件判断……
     - Freestyle 做不到的，Pipeline 都能做。
 - 然后点击流水线任务里进去一行行配置，主要是配置流水线的脚本
-```js
+```groovy
 // 例如在pipeline的流水线配置项里选的Pipline script模式，直接在页面里书写配置的
 pipeline {
-    agent any          // 在任何节点执行
-    stages {           // 所有步骤都在这里
-        
+    agent any
+    stages {
         stage('拉代码') {
             steps {
-                git url: '仓库地址', branch: 'main', credentialsId: '凭证ID'
+               // git插件提供的方法
+                git url: 'https://gitee.com/xxx/xxx.git', 
+                    branch: 'main', 
+                    credentialsId: '你的凭证ID'
             }
         }
 
-        stage('编译打包') {
+        stage('编译') {
             steps {
                 sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('发布到服务器') {
+        stage('发布') {
             steps {
-                sshPublisher(...)  // 就是你之前用的 Publish Over SSH
+            // Publish Over SSH插件提供的方法
+                sshPublisher(publishers: [sshPublisherDesc(
+                    configName: '你的服务器名',
+                    transfers: [sshTransfer(
+                        sourceFiles: 'target/*.jar',
+                        removePrefix: 'target',
+                        remoteDirectory: '/opt/app'
+                    )],
+                    execCommand: '''
+                        cd /opt/app
+                        pkill -f app.jar
+                        nohup java -jar app.jar > run.log 2>&1 &
+                    '''
+                )])
             }
         }
     }
 }
+// 这些插件对应的语法，可以直接方便地在jekins转化页面中，通过默认freestyle模式插件输入框输入，生成对应的脚本
 ```
 #### 3-8 通过jekinsfile管理构建pipline脚本
 
@@ -1752,7 +1768,7 @@ pipeline {
 ![alt text](image-32.png)
 - 勾选后，选择字符参数进行配置，填写key-value
 - 相当于设置好流水线json里的环境变量
-- 在项目源码的流水线json里使用这些环境变量：![alt text](image-34.png)
+- 在项目源码的流水线json里使用这些环境变量：![alt text](image-35.png)
 ### 4章 通过jekins部署服务
 
 #### 4-1 有哪些服务器我们需要部署？
