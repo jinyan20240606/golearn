@@ -28,6 +28,7 @@
    3. 传值用：表示代表把切片打散，一个个传进去，作为值用
       1. `callback(msgList...) // ✅ 正确！打散切片传入`
 5. go中的存在多个defer时，defer的执行顺序是后进先出，最后一个定义的defer先执行
+6. 创建文件时，一定要记得设置文件权限，避免文件权限类错误
 
 ### 类型的表达式运算
 1. `int / int` → 结果是 **整数**（小数直接截断，不会四舍五入）
@@ -145,6 +146,9 @@
 
 
 
+### shell语法积累
+
+1. 参考`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/start.sh`
 
 ### 在课程中提到的docker技巧
 

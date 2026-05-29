@@ -1598,6 +1598,28 @@ HTTPS 加密访问
 - 下面解释了为什么jekins需要单独配套一个构建服务器，下面介绍了，构建服务器只管构建集成相关，业务服务器只接收一个镜像或最终包即可
 ![alt text](image-30.png)
 
+
+#### 3-x 概念总结
+**jekins部署模式：**
+1. 单节点模式（单机）
+   1. 所有功能：Web 界面、调度、拉代码、编译、打包、部署，全在一台机器上跑。
+   2. 又叫：独立节点、单 Master。
+2. 分布式模式（主从 Master-Agent）
+   1. Master（主节点）：只做 “调度 + 界面 + 管理”，不干活（不编译打包）。
+   2. Agent（从节点 / 代理节点）：专门干活：拉代码、编译、测试、打包、部署。
+   3. 一个 Master → 可以挂 N 个 Agent（Linux/Windows/macOS/ 容器都行）。------ 相当于gitlab的runner机
+3. 延伸（云原生）：K8s 动态 Agent（弹性主从）
+   1. Master 对接 K8s，任务来了自动创建 Pod 当 Agent，跑完自动销毁，资源利用率最高。
+
+
+```js
+系统	      单机	                           主从 / 分布式	                                                  核心区别
+Jenkins	一个节点：Web + 调度 + 构建	       Master（调度）+ Agent（构建）	                                   主从 =调度和执行分离
+GitLab	一个节点：Web+DB + 仓库 + Runner	   1. 服务：Web 集群 + DB 主从 + Gitaly 集群2. CI：GitLab Runner 集群	服务是分层分布式；Runner 才是执行节点
+```
+
+1. GitLab CI/CD 的 Runner（才是和 Jenkins Agent专门构建机器 对应的东西）
+
 #### 3-4 安装jekins常用插件
 
 1. 先修改插件下载地址、
@@ -1641,6 +1663,8 @@ HTTPS 加密访问
 
 1. 新建自由风格项目即默认简单模式
 2. 源码管理配置 Git，绑定仓库与凭证
+   1. 在 Jenkins 里，SCM 就是指Source Code Management（源码管理）
+   2. 你在页面点构建 →代码自动拉到：`/var/lib/jenkins/workspace/你的项目名/`
 3. 设置构建触发器（轮询 / WebHook）
 4. 配置构建环境（可选）
 5. 添加构建步骤，执行编译 / 打包
@@ -1772,5 +1796,85 @@ pipeline {
 ### 4章 通过jekins部署服务
 
 #### 4-1 有哪些服务器我们需要部署？
+![alt text](image-34.png)
+1. 前端服务器一般用nginx提供服务，不需要安装nodejs
+2. 后端服务器不用安装go
+3. 后端python项目服务器，需要安装python，因为它要在服务器上执行源码
+
+#### 4-2 前端代码上传到git并启动
+
+1. 测试：在构建服务器上git clone我们前端代码，下来并nodejs构建
+2. 下节讲如何部署到nginx去
+
+#### 4-3 nginx中部署前端项目
+
+1. 在业务服务器中，用docker安装启动nginx
+   1. 把html资源，配置文件，直接挂载到宿主机上，并启动nginx
+2. 把前端dist源码部署到上面的nginx资源目录中
+   1. 视频中是通过winscp直接上传的
+#### 4-4 jekins部署前端项目
+
+- 就是通过jenkins流水线实现自动构建部署到业务服务器中
+- 在前端项目仓库下会建个jenkinsfile文件，里面写好构建和部署的脚本
+
+#### 4-5 通过go build构建go微服务
+
+1. 首先需要在jenkins的构建服务器上安装go环境，实现直接使用go能找到命令，中间需要设置linux的环境变量
+2. jekins流水线执行时找不到go命令，只能在构建流水线中的shell脚本在显示设置下go的环境变量和环境准备工作，如开启go module模式
+3. 然后先构建好目录结构，每个项目对应一个服务器上的目录下，然后必须打开目录文件权限
+   1. 因为本地测试中发现直接执行打包好的可执行文件会报错：报找不到配置文件，所以额外给他创建一个目录，并复制配置文件过去，然后可执行文件在这个目录中执行就可以了
+4. 准备好了后，执行构建，看构建是否成功
+```shell
+# shell脚本大致如下
+# ======================
+# 1. 配置 Go 语言环境变量
+# ======================
+echo "===== 配置 Go 环境变量 ====="
+export GOROOT=/usr/local/go
+export PATH=$PATH:$GOROOT/bin
+
+# 验证是否生效
+go version
+
+# ======================
+# 2. 配置 Go module 代理
+# ======================
+echo "===== 配置 Go module 代理 ====="
+go env -w GO111MODULE=on
+go env -w GOPROXY=https://goproxy.io,direct
+
+# ======================
+# 3. 准备目录结构 & 赋权
+# ======================
+echo "===== 准备目录结构 ====="
+chmod 777 -R goods_srv/
+mkdir -vp goods-web/target/goods-web
+
+# ======================
+# 4. 复制配置文件 ---- 因为本地测试中发现直接执行打包好的可执行文件会报错：报找不到配置文件，所以额外给他创建一个目录，并复制配置文件过去，然后可执行文件在这个目录中执行就可以了
+# ======================
+echo "===== 复制配置文件 ====="
+cp goods-web/config-pro.yaml goods-web/target/goods-web/config-pro.yaml
+
+# ======================
+# 5. 进入目录编译
+# ======================
+echo "===== 开始编译 Go 项目 ====="
+cd goods-web
+go build -o target/goods_web_main
+```
+
+#### 4-6 发布go项目到远程服务器上
+
+- 接着前面的操作，配置构建后操作的步骤
+- 细节注意点
+  - 构建后把代码上传到远程服务器后，会出现权限不足的问题
+  - 需要在执行命令配置项中执行：`chmod +x /docker/golang/goods-web/target/goods_web_main`
+    - 给上传到远程服务器上的 Go 可执行文件加「可执行权限」
+#### 4-7 通过shell脚本启动gin服务
+
+上节遗留的问题，不能直接在构建后执行的命令中，直接启动可执行文件，我们应该在微服务项目中单独维护一个start.sh脚本，然后把可执行文件上传到远程服务器，并执行该脚本，启动服务，因为启动包含了一些逻辑判断，如后台运行，杀死上个进程等等
+
+- 脚本参考`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop_srvs/goods_srv/start.sh`
 
 ### 5章 课程总结
