@@ -154,7 +154,8 @@
 
 1. 服务器重启，自动启动容器`docker run -d --name nginx -p 80:80 --restart=always nginx`
 ## go语言中的常见规定
-
+### 代码规范 
+uber开源的代码规范:https://github.com/xxjwxc/uber_go_guide_cn
 ### Go 语言中命名和结构体初始化规定
 
 #### 核心规则：大小写决定可见性
