@@ -47,6 +47,9 @@ go modules包管理机制： 可以添加依赖，删除未使用的依赖项
    14. `go mod graph`：查看依赖包的依赖关系
    15. `go mod vendor`：将依赖包复制到 vendor 目录
    16. `go mod vendor -v`：查看依赖包的版本`
+   17. 搞清 `go mod` 与 `go install`的  区别
+       1.  go get：下载 / 更新源码 + 依赖，主要用来获取项目代码
+       2.  go install：编译 + 安装二进制工具，主要用来装可执行命令
 
 2. Go modules 下载的包 默认装在哪里？
    1. 所有第三方包，默认统一安装在：`$GOPATH/pkg/mod`
