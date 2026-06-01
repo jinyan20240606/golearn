@@ -62,8 +62,9 @@ var _ = Describe("Books", func() {
 })
 
 /*
-1. proto文件可以用作http和rpc服务的生成标注写法
-	我写了一个gin的服务，我还要手动去维护api文档，手动去yapi上维护 后期维护和迭代很简单， 改了任何代码你都可以直接生成api
+1. proto文件可以用作http和rpc服务的生成标准写法
+	我写了一个gin的服务，我还要手动去维护api文档，手动去yapi上维护
+	当有了proto后，可以后期维护和迭代很简单， 改了任何代码你都可以直接生成api
 	可以直接将proto生成swagger文件，然后一键导入到yapi上，这样就可以直接在yapi上查看api文档了
 2. 在kratos中对proto的依赖更加重， 可以用来定义一些错误码， 并生成go源码直接使用
 3. kratos甚至将配置文件都给你映射成proto文件
