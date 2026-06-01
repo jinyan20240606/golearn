@@ -277,3 +277,44 @@ order := &orderv1.Order{
 - 见`jieduan7-效率工具开发/tools/generator`
 
 ### 2章 cobra命令行开发神器
+
+#### 2-1 不同服务的通用性在哪里
+
+- 见`jieduan7-效率工具开发/cobra/main.go`
+
+#### 2-2  不使用cobra如何完成项目启动参数检查
+- 见`jieduan7-效率工具开发/cobra/main.go`
+  - 不使用cobra的话，只能使用原生的flag解析和手动参数检查
+#### 2-3 通过cobra简化项目启动
+
+- 文件见`jieduan7-效率工具开发/cobra/ch02`
+Cobra是Go的CLI框架，它包含一个用于创建功能强大的现代CLI应用程序的库，以及一个用于快速生成基于Cobra的应用程序和命令文件的工具。
+
+Cobra由Go项目成员和hugo作者spf13创建，已经被许多流行的Go项目采用，比如GitHub CLI和Docker CLI,Kubernetes、go-zero、kratos 等都有它的身影存在,
+
+一句话:只要你想写命令行使用cobra就够了。
+
+**概念**
+- Cobra 采用 3 层结构，所有命令行工具（Docker、K8s、Git）都是这个模型：
+- 1. Command（命令）
+  - 最核心！一切都是 Command。
+  - 你的程序里的每一个功能，都是一个 Command。
+  - `mycli run`，`mycli build`
+- 2. Args（参数）
+  - 命令后面跟的内容
+  - `kubectl get pod nginx`,nginx 就是 Args
+- 3. Flags（选项 / 配置）:命令的额外参数，以 - 或 -- 开头
+  - `go run main.go --port 8080 -h`--port、-h 都是 Flags
+
+#### 2-4 通过cobra-cli简化开发
+- 文件见`jieduan7-效率工具开发/cobra/ch03`
+- 在一个空文件中，直接·输入`cobra-cli init`，直接生成快速模版
+- 添加一个子命令：`cobra-cli add get`
+- 添加子命令，指定父命令是get：`cobra-cli add list -p get`
+  - list 是 get 的子命令，用法：`yourcli get list`
+- **注意**：cobra-cli 只能生成命令，不能生成 flags
+- 添加flags必须通过代码添加：`getCmd.Flags()`
+  -  最常用 3 种 flag 模板:字符串 flag（最常用）,数字 flag,布尔 flag（开关）
+  -  如`var age int; getCmd.Flags().IntVarP(&age, "age", "a", 0, "年龄")`
+
+#### 2-5 为命令添加flag解析
