@@ -29,10 +29,13 @@ type server struct {
 func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
 	log.Printf("Received: %v", in.GetName())
 	e := errors.WithCode(code.ErrUserNotFound, "user not found")
-	// 这是自定义的错误体系在grpc中兼容使用
+	// 方式1：我们的方案 - 手动调用 ToGrpcError 转换（因为 withCode 没有实现 GRPCStatus() 接口）
 	return nil, errors.ToGrpcError(e)
-	// 下面注释是gprc的自带error体系
+	// 方式2：gRPC 原生 error 体系（只有 grpcCode + 纯文本，没有业务码）
 	return nil, status.Error(codes.NotFound, "user not found")
+	// 方式3（如果 withCode 实现了 GRPCStatus() 接口，像 Kratos 那样）：
+	// 直接返回即可，gRPC 框架会自动调用 e.GRPCStatus() 转换，不需要手动 ToGrpcError
+	// return nil, e
 	//return &pb.HelloReply{Message: "Hello " + in.GetName()}, nil
 }
 

@@ -604,20 +604,7 @@ func main() {
 - gRPC 转换方法已在本地实现，见 `jieduan8-深入底层库封装-ast代码生成方案/error/pkg/errors/grpc.go`
 - `ToGrpcError`：将 withCode error 序列化为 gRPC error（业务码+消息 JSON 化到 message 字段，HTTP 状态码映射为 gRPC codes）
 - `FromGrpcError`：从 gRPC error 的 message 中反序列化出业务码，重建 withCode error
-
-```go
-// server 端：创建 withCode error 并转为 gRPC error 返回
-e := errors.WithCode(code.ErrUserNotFound, "user not found")
-return nil, errors.ToGrpcError(e)
-// 内部：序列化为 gRPC status，code=NotFound，message={"code":110200,"message":"user not found"}
-
-// client 端：从 gRPC error 还原
-s := errors.FromGrpcError(err)  // 反序列化 JSON，重建 withCode error
-coder := errors.ParseCoder(s)   // 从全局注册表查找 Coder
-fmt.Println(coder.Code())       // 110200
-fmt.Println(coder.HTTPStatus()) // 404
-fmt.Println(coder.String())     // "用户不存在"
-```
+- 相关文件见 `jieduan8-深入底层库封装-ast代码生成方案/error/ch03/rpc的`client文件和server文件
 
 ##### 关键点总结
 
@@ -696,11 +683,87 @@ register(ErrBind, 400, "请求体解析失败", "")
 
 #### 1-12 增加fromerror解决grpc转换为内部error
 
- 这节主要讲：**gRPC 传输**：`ToGrpcError`/`FromGrpcError`（见 `pkg/errors/grpc.go`）负责 withCode error 与 gRPC error 的互转
+- 具体示例代码见：`jieduan8-深入底层库封装-ast代码生成方案/error/ch03/rpc`
+
+这节主要讲：**gRPC 传输**：`ToGrpcError`/`FromGrpcError`（见 `pkg/errors/grpc.go`）负责 withCode error 与 gRPC error 的互转
 
 - 我们需要兼容的话，在我们自定义的`jieduan8-深入底层库封装-ast代码生成方案/error/pkg/errors/grpc.go`中增加兼容方法
   - `ToGrpcError`：将我们自定义error转化成grpc认识的error
   - FromGrpcError方法
+  - 还有一种兼容方式不用显示ToGrpcError，用框架提供的隐式鸭子接口钩子见代码文件注释
+
 #### 1-13 kratos框架中如何实现的errors？
+
+大概看下原理类似，引出下章节话题，通过AST 自动生成注册Coder代码
+
+##### Kratos errors 实现思路
+
+1. **Error 结构**：code(HTTP状态码) + reason(业务字符串) + message + metadata
+2. **gRPC 自动转换**：实现 `GRPCStatus()` 接口，gRPC 框架自动调用，不需要手动 ToGrpcError
+3. **业务信息传输**：用 `status.WithDetails()` 把 reason+metadata 放到 gRPC status.Details 中
+4. **映射**：httpStatus ↔ grpcCode 双向映射（`httpstatus` 包）
+5. **无注册表**：不需要全局 map，业务判断直接用 `errors.Is(err, ErrXxx)` 比较 code+reason
+
+##### 与我们方案的核心不同
+
+| | 我们 | Kratos |
+|---|---|---|
+| code 语义 | 6位业务码（需注册表映射HTTP码） | 直接就是 HTTP 状态码 |
+| 业务区分 | 数字码查 map | reason 字符串直接比较 |
+| gRPC 转换 | 手动 ToGrpcError/FromGrpcError | GRPCStatus() 接口自动 |
+| 映射方向 | **单向**（httpStatus→grpcCode），反向靠 JSON 还原业务码 | **双向**（httpStatus↔grpcCode） |
+| 传输载体 | JSON 塞 message | proto 放 Details |
+
+##### ToGrpcError中的映射grpcCode实现细节注意
+**错误做法：直接用业务码转 grpcCode**
+```go
+// ❌ 错误！业务码 110200 直接塞进 gRPC codes
+status.Error(codes.Code(110200), msg)
+// gRPC codes 只有 0~16，110200 超出范围，行为未定义
+```
+
+**方案A（我们）：业务码 → 查注册表得到 httpStatus → 单向映射 grpcCode**
+```go
+coder := ParseCoder(err)           // 110200 → 查注册表 → httpStatus=404
+grpcCode := httpStatusToGrpcCode(coder.HTTPStatus()) // 404 → codes.NotFound
+// ⚠️ 我们只做 httpStatus→grpcCode 单向转换（ToGrpcError 时用）
+// 反向还原时，不需要 grpcCode→httpStatus，因为业务码直接在 message JSON 中传输
+```
+
+**方案B（Kratos）：code 本身就是 httpStatus → 双向映射 grpcCode**
+```go
+// 发送：ToGRPCCode
+grpcCode := ToGRPCCode(int(e.Code)) // 404 → codes.NotFound
+// 接收：FromGRPCCode（需要反向映射回 httpStatus）
+httpCode := FromGRPCCode(gs.Code()) // codes.NotFound → 404
+// Kratos 需要双向映射，因为它的 code 就是 httpStatus，接收时要还原
+```
+
+**结论：用 httpStatus 做中间桥梁是唯一正确的做法**
+
+两种方案**本质都是 httpStatus → grpcCode**，区别只是 httpStatus 的来源：
+- Kratos：code 字段本身就是 httpStatus，**直接映射**，链路最短
+- 我们：code 是业务码，需要**先查注册表**拿到 httpStatus，再映射
+
+用 httpStatus 做桥梁的原因：
+1. HTTP 状态码和 gRPC codes 都是标准协议层的概念，天然存在语义对应关系（404↔NotFound）
+2. 业务码是自定义的，gRPC 不认识，没有对应关系
+3. Google 官方就是按 HTTP↔gRPC 设计的映射表（见 googleapis/google/rpc/code.proto）
+
+所以 Kratos 的设计更直接：**code = httpStatus = gRPC 映射的直接输入**，省去注册表中间环节
+
+**注意：HTTP↔gRPC codes 的映射方向不对称**
+
+- **HTTP→gRPC（ToGRPCCode）：无丢失，一对一**。每个 HTTP 状态码唯一对应一个 gRPC code
+- **gRPC→HTTP（FromGRPCCode）：有丢失，多对一**。多个 gRPC code 映射到同一个 HTTP 码：
+
+所以如果做**双向往返转换**（HTTP→gRPC→HTTP），不会丢失；但（gRPC→HTTP→gRPC），可能丢失。
+这就是为什么 Kratos 要把 reason 放到 Details 中传输——**gRPC code 只做粗粒度分类，细粒度靠 reason/业务码**
+
+
+
+
+
 ### 2章 通过ast自动生成代码
 
+#### 2-1 go的generate自动生成代码
