@@ -1,0 +1,274 @@
+// Package main 通过 AST 解析 code 包中的常量定义和注释，
+// 自动生成 code-registry.go 注册文件。
+//
+// 用法:
+//
+//	go run ./ast/codegen.go -dir ../code -output ../code/code-registry_gen.go
+//
+// 注释约定格式:
+//
+//	// ErrXxx - HTTP状态码: 错误描述.
+//	ErrXxx
+package main
+
+import (
+	"bytes"
+	"flag"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"log"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"text/template"
+	//	text/template = 纯文本模版，啥也不处理，你写啥输出啥
+	//
+	// html/template = 自带安全防护的模版，自动转义 HTML、JS、CSS、URL，防 XSS
+)
+
+// ErrorCodeEntry 记录一个错误码常量的解析结果
+type ErrorCodeEntry struct {
+	Name       string // 常量名，如 ErrBind
+	HTTPStatus int    // HTTP 状态码，如 400
+	Message    string // 错误描述，如 "请求体解析失败"
+}
+
+// 正则匹配注释格式: // ErrXxx - 400: 错误描述.
+var commentRegex = regexp.MustCompile(`^//\s*(\w+)\s*-\s*(\d+)\s*:\s*(.+)\.\s*$`)
+
+func main() {
+	dir := flag.String("dir", ".", "要解析的 code 包目录路径")
+	output := flag.String("output", "code-registry_gen.go", "输出的注册文件路径")
+	flag.Parse()
+
+	entries, err := parseDir(*dir)
+	if err != nil {
+		log.Fatalf("解析目录失败: %v", err)
+	}
+
+	if len(entries) == 0 {
+		log.Fatal("未找到任何符合格式的错误码常量")
+	}
+
+	code, err := generateCode(entries)
+	if err != nil {
+		log.Fatalf("生成代码失败: %v", err)
+	}
+
+	if err := os.WriteFile(*output, []byte(code), 0644); err != nil {
+		log.Fatalf("写入文件失败: %v", err)
+	}
+
+	fmt.Printf("✅ 成功生成 %s，共 %d 个错误码注册\n", *output, len(entries))
+}
+
+// parseDir 解析指定目录下所有 .go 文件，提取错误码常量信息
+func parseDir(dir string) ([]ErrorCodeEntry, error) {
+	fset := token.NewFileSet()
+
+	// 过滤掉 code-registry 和 ast 目录下的文件
+	filter := func(info os.FileInfo) bool {
+		name := info.Name()
+		return !strings.HasPrefix(name, "code-registry") && !strings.Contains(name, "_gen")
+	}
+
+	pkgs, err := parser.ParseDir(fset, dir, filter, parser.ParseComments)
+	if err != nil {
+		return nil, fmt.Errorf("parser.ParseDir: %w", err)
+	}
+
+	var entries []ErrorCodeEntry
+
+	for _, pkg := range pkgs {
+		for filePath, file := range pkg.Files {
+			// 跳过 ast 子目录中的文件
+			if strings.Contains(filePath, string(filepath.Separator)+"ast"+string(filepath.Separator)) {
+				continue
+			}
+			fileEntries := parseFile(file)
+			entries = append(entries, fileEntries...)
+		}
+	}
+
+	return entries, nil
+}
+
+// parseFile 解析单个文件的 AST，提取带有标准注释格式的 iota 常量
+func parseFile(file *ast.File) []ErrorCodeEntry {
+	var entries []ErrorCodeEntry
+
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.CONST {
+			continue
+		}
+
+		// 检查这个 const 块是否包含 iota（即第一个 spec 有 iota 表达式）
+		if !isIotaConstBlock(genDecl) {
+			continue
+		}
+
+		// 遍历 const 块中的每个常量
+		for _, spec := range genDecl.Specs {
+			valueSpec, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+
+			// 解析该常量关联的注释
+			entry, found := extractEntryFromSpec(valueSpec)
+			if found {
+				entries = append(entries, entry)
+			}
+		}
+	}
+
+	return entries
+}
+
+// isIotaConstBlock 判断一个 const 声明块是否使用了 iota
+func isIotaConstBlock(genDecl *ast.GenDecl) bool {
+	if len(genDecl.Specs) == 0 {
+		return false
+	}
+
+	firstSpec, ok := genDecl.Specs[0].(*ast.ValueSpec)
+	if !ok || len(firstSpec.Values) == 0 {
+		return false
+	}
+
+	// 递归检查表达式中是否包含 iota
+	return containsIota(firstSpec.Values[0])
+}
+
+// containsIota 递归检查表达式树中是否有 iota 标识符
+func containsIota(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name == "iota"
+	case *ast.BinaryExpr:
+		return containsIota(e.X) || containsIota(e.Y)
+	case *ast.ParenExpr:
+		return containsIota(e.X)
+	case *ast.CallExpr:
+		for _, arg := range e.Args {
+			if containsIota(arg) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// extractEntryFromSpec 从 ValueSpec 的 Doc 或 Comment 中提取错误码信息
+func extractEntryFromSpec(spec *ast.ValueSpec) (ErrorCodeEntry, bool) {
+	if len(spec.Names) == 0 {
+		return ErrorCodeEntry{}, false
+	}
+
+	constName := spec.Names[0].Name
+
+	// 尝试从 Doc（常量上方的注释）提取
+	if spec.Doc != nil {
+		for _, comment := range spec.Doc.List {
+			entry, ok := parseComment(comment.Text, constName)
+			if ok {
+				return entry, true
+			}
+		}
+	}
+
+	// 尝试从 Comment（行尾注释）提取
+	if spec.Comment != nil {
+		for _, comment := range spec.Comment.List {
+			entry, ok := parseComment(comment.Text, constName)
+			if ok {
+				return entry, true
+			}
+		}
+	}
+
+	return ErrorCodeEntry{}, false
+}
+
+// parseComment 用正则解析注释文本，提取 HTTP 状态码和描述
+func parseComment(text string, expectedName string) (ErrorCodeEntry, bool) {
+	matches := commentRegex.FindStringSubmatch(text)
+	if len(matches) != 4 {
+		return ErrorCodeEntry{}, false
+	}
+
+	name := matches[1]
+	httpCode, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return ErrorCodeEntry{}, false
+	}
+	message := strings.TrimSpace(matches[3])
+
+	// 校验注释中的常量名与实际常量名是否一致
+	if name != expectedName {
+		return ErrorCodeEntry{}, false
+	}
+
+	return ErrorCodeEntry{
+		Name:       name,
+		HTTPStatus: httpCode,
+		Message:    message,
+	}, true
+}
+
+// generateCode 用模板生成 code-registry_gen.go 代码
+func generateCode(entries []ErrorCodeEntry) (string, error) {
+	const tmpl = `// Code generated by ast/codegen.go. DO NOT EDIT.
+// 通过 go generate 自动生成，请勿手动修改此文件。
+
+package code
+
+import "mxshop/pkg/errors"
+
+// coder 实现 errors.Coder 接口，用于向 pkg/errors 注册错误码
+type coder struct {
+	code int    // 业务错误码（6位）
+	http int    // 对应 HTTP 状态码
+	ext  string // 面向用户的错误描述
+	ref  string // 参考文档链接
+}
+
+func (c coder) Code() int         { return c.code }
+func (c coder) HTTPStatus() int   { return c.http }
+func (c coder) String() string    { return c.ext }
+func (c coder) Reference() string { return c.ref }
+
+// register 是注册错误码的快捷方法
+func register(code, httpStatus int, message, ref string) {
+	errors.MustRegister(coder{
+		code: code,
+		http: httpStatus,
+		ext:  message,
+		ref:  ref,
+	})
+}
+
+func init() {
+{{- range .}}
+	register({{.Name}}, {{.HTTPStatus}}, "{{.Message}}", "")
+{{- end}}
+}
+`
+
+	t, err := template.New("registry").Parse(tmpl)
+	if err != nil {
+		return "", fmt.Errorf("template.Parse: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, entries); err != nil {
+		return "", fmt.Errorf("template.Execute: %w", err)
+	}
+
+	return buf.String(), nil
+}

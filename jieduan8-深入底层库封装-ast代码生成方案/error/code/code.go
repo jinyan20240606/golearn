@@ -1,5 +1,7 @@
 package code
 
+//go:generate go run ./ast/codegen.go -dir . -output ./code-registry_gen.go
+
 // 错误码规则：6位 AABBCC
 // AA: 服务编号   (10=通用服务)
 // BB: 模块编号

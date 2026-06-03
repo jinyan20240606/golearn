@@ -618,43 +618,7 @@ func main() {
 
 ##### AST 自动生成注册代码的设计意图
 
-当前 `code-registry.go` 是手动编写的，但作者的原始设计意图是：**通过 AST 解析注释，自动生成注册代码**。后续小节会讲
-
-注释约定格式（见 `code/code.go`）：
-```go
-// ErrBind - 400: 请求体解析失败.
-ErrBind
-```
-
-格式规则：`// 常量名 - HTTP状态码: 错误描述.`
-
-**AST 自动生成流程**：
-
-1. **解析源文件**：用 `go/parser` 解析 `code/code.go`、`code/goods.go` 等文件的 AST
-2. **遍历常量声明**：找到所有 `const` 块中的 `iota` 常量
-3. **提取注释**：对每个常量，用正则解析关联注释 `// ErrXxx - HTTP状态码: 描述.`
-   - 常量名 → 错误码变量名
-   - HTTP状态码 → `httpStatus` 参数
-   - 描述 → `message` 参数
-4. **计算常量值**：根据 iota 基准值（如 `ServiceCommon + ModBase`）+ 偏移量算出实际数值
-5. **生成代码**：输出 `code-registry.go` 文件，内容为 `init()` 中的 `register(...)` 调用
-
-**生成前（输入 - code.go 注释）**：
-```go
-// ErrBind - 400: 请求体解析失败.
-ErrBind
-```
-
-**生成后（输出 - code-registry.go）**：
-```go
-register(ErrBind, 400, "请求体解析失败", "")
-```
-
-这样的好处：
-- 开发者只需在定义常量时写好注释，无需手动维护 `code-registry.go`
-- 注释即文档，注释即注册数据源，单一数据源
-- 通过 `go generate` 一键重新生成
-- 这就是第2章"通过 AST 自动生成代码"要实现的核心能力
+当前 `code-registry.go` 是手动编写的，但作者的原始设计意图是：**通过 AST 解析注释，自动生成注册代码**。后续小节2-4节会讲
 
 
 #### 经验小节
@@ -767,3 +731,140 @@ httpCode := FromGRPCCode(gs.Code()) // codes.NotFound → 404
 ### 2章 通过ast自动生成代码
 
 #### 2-1 go的generate自动生成代码
+
+go中不支持java那样注解，装饰器什么的。所以go推崇使用自动生成代码，推出的官方生成代码命令是`go generate`
+
+- Go 没有注解、没有装饰器、没有元编程！
+  - 没有 Java 的 @Annotation
+  - 没有 Python 的 @decorator
+  - 没有 C# 的特性
+  - 不支持运行时反射注入
+- Go 官方态度：运行时反射复杂、慢、不安全 → 不推荐，-----〉不要用反射，用代码生成。
+- go generate 是干嘛的？：让工具自动帮你写重复代码
+  - 错误码自动注册
+  - 结构体自动填充方法
+  - 接口自动实现
+  - 依赖注入自动生成
+  - 你只写定义，工具帮你写代码！
+- go的设计原因：
+  - 编译期安全
+  - 运行时性能极高
+  - 代码清晰可追溯
+  - 没有黑魔法
+  - 工具链统一（官方自带 go generate）
+
+
+- go的`generate命令`本身不解决生成代码的功能，go generate 本身不生成任何代码！它只是一个「命令触发器 / 任务执行器」**
+  - 真正生成代码的是：它调用的外部工具（protoc、stringer、mockgen，codegen 等）
+  - 它只干一件事：扫描源码里的 `//go:generate 注释` → 执行后面的 shell 命令`，就这么简单！
+    - 它不是编译器，不解析语法，不生成逻辑，就是一个自动化批处理工具！
+- 你在代码里写一行注释：`//go:generate echo "我被执行了！"`
+  - 然后运行`go generate`,然后就执行了那个echo语句，它只是执行了 echo 命令，自己啥也没生成。
+- 代码文件见`jieduan8-深入底层库封装-ast代码生成方案/generate/code/enum.go`
+  - 这里就需要手动单独安装个stringer工具
+  - `go install golang.org/x/tools/cmd/stringer@latest`
+    - 执行完自动编译二进制，放到 $GOPATH/bin / $GOROOT/bin，必须保证 bin 加入系统 PATH，终端才能直接调用 stringer。
+    - 旧版 go get 已废弃，不要再用 go get golang.org/x/tools/cmd/stringer
+    - -type参数 是 独属于stringer工具的必选参数，意思是到底要给哪个类型生成 String () 方法
+  - 生成后，我们单独执行`jieduan8-深入底层库封装-ast代码生成方案/generate/main.go`文件，就会打印出中文注释而不是数字
+- 上面只是我们stringer工具的用法示例，我们的目标是实现一个自己的工具，支持生成前个章节的自动注册代码生成
+
+#### 2-2 go的ast包能做什么？
+
+- go的ast博客讲解：https://zhuanlan.zhihu.com/p/380421057
+  - https://juejin.cn/post/7139026335091359774#heading-11
+- go的ast包
+  - ast 包 = 能让你「读 / 改 / 生成 Go 源代码」的工具包
+  - go的编译本身也需要ast的
+- AST 处理 Go 代码的 4 步固定流程
+  - 所有 Go 代码解析、生成、修改工具（stringer、mockgen、protoc、linter）
+- 全部都遵循这 4 步！
+  -  1）把源码读进来 → 字符流
+  -  2）词法分析 → 切成一个个 “单词”，这一步叫 tokenize
+  -  3）语法分析 → 生成 AST 树
+     -  Go 标准库 go/parser 做这件事。
+     -  代码会变成结构化对象：
+        -  文件结构
+        -  package
+        -  类型定义
+        -  常量
+        -  注释
+        -  数值
+     -  你可以用代码遍历、读取、修改。
+  -  4）处理 / 生成代码 → 输出新 Go 文件
+#### 2-3 ast语法树的基本元素
+
+>支持各种语言的ast在线解析网站： https://astexplorer.net/ 
+
+- 一些ast语法概念：大概见：https://juejin.cn/post/7139026335091359774#heading-11
+  - https://zhuanlan.zhihu.com/p/380421057
+
+#### 2-4 通过ast包解析变量名和变量的注释
+- golang官方提供的几个包，可以帮助我们进行AST分析：
+  - go/scanner：词法解析，将源代码分割成一个个token
+  - go/token：token类型及相关结构体定义
+  - go/ast：ast的结构定义
+  - go/parser：语法分析，读取token流生成ast
+  - 通过上述的四个库，我们就可以实现golang代码的语法树分析
+- 我们的目标想把`jieduan8-深入底层库封装-ast代码生成方案/error/code`下的code错误码文件进行进行ast解析，自动生成类似`code-registry.go`的自动注册错误码逻辑的文件
+
+- code/code.go文件中注释的约定格式（见 `code/code.go`）：
+```go
+// ErrBind - 400: 请求体解析失败.
+ErrBind
+```
+
+格式规则：`// 常量名 - HTTP状态码: 错误描述.`
+
+**AST 自动生成流程**：
+
+1. **解析源文件**：用 `go/parser` 解析 `code/code.go`、`code/goods.go` 等文件的 AST
+2. **遍历常量声明**：找到所有 `const` 块中的 `iota` 常量
+3. **提取注释**：对每个常量，用正则解析关联注释 `// ErrXxx - HTTP状态码: 描述.`
+   - 常量名 → 错误码变量名
+   - HTTP状态码 → `httpStatus` 参数
+   - 描述 → `message` 参数
+4. **计算常量值**：根据 iota 基准值（如 `ServiceCommon + ModBase`）+ 偏移量算出实际数值
+5. **生成代码**：输出 `code-registry.go` 文件，内容为 `init()` 中的 `register(...)` 调用
+
+**生成前（输入 - code.go 注释）**：
+```go
+// ErrBind - 400: 请求体解析失败.
+ErrBind
+```
+
+**生成后（输出 - code-registry.go）**：
+```go
+register(ErrBind, 400, "请求体解析失败", "")
+```
+
+这样的好处：
+- 开发者只需在定义常量时写好注释，无需手动维护 `code-registry.go`
+- 注释即文档，注释即注册数据源，单一数据源
+- 通过 `go generate` 一键重新生成
+- 这就是第2章"通过 AST 自动生成代码"要实现的核心能力
+
+- **ast示例代码文件夹**见`jieduan8-深入底层库封装-ast代码生成方案/error/code/ast/`
+  - code-registry.go为手写实现的目标文件，code-registry_gen.go为自动生成的目标文件,理论上与手写的代码一致
+  - html/template与text/template为模板文件，用于生成code-registry_gen.go
+  - 具体实现逻辑和ast逻辑看代码注释吧
+
+#### 2-5 将ast生成的源码写入文件中
+- 参考ast目录中的codegen.go文件的generateCode相关方法
+- 最终使用方式可以直接在终端调用go执行build后的可执行文件，或者`配合go generate命令使用`
+**使用方式**：
+
+1. 在同包任意一个错误码文件中加一处生成指令即可，这里放在 [`code.go`](jieduan8-深入底层库封装-ast代码生成方案/error/code/code.go) 顶部：
+
+```go
+//go:generate go run ./ast/codegen.go -dir . -output ./code-registry_gen.go
+```
+
+2. 不需要每个文件都加。
+   - 因为生成器传了参数，会扫描整个 [`error/code`](jieduan8-深入底层库封装-ast代码生成方案/error/code) 目录
+   - 所以 [`code.go`](jieduan8-深入底层库封装-ast代码生成方案/error/code/code.go)、[`goods.go`](jieduan8-深入底层库封装-ast代码生成方案/error/code/goods.go) 以及后续新增的同包文件都会被统一解析
+3. 执行`go generate`
+
+#### 2-6 通过codegen自动生成注册源码
+
+安装老师写好的codegen源码进行测试
