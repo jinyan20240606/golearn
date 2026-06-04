@@ -93,218 +93,192 @@ data层（数据库的接口）
 
 #### 一个经典业务场景：创建订单时整条链怎么流转
 
-下面用“创建订单”这个场景，把 DTO、BO、DO、VO 一次串起来。重点不是只看字段，而是看每一段到底在干什么业务。
+**整体流转概览**
+```
+前端JSON入参 → CreateOrderReqDTO
+        ↓(Service查库补全、业务计算，拆4个BO)
+OrderBaseBO订单主BO + OrderItemBO订单商品BO + OrderCouponBO优惠券核销BO + OrderPayBO订单支付BO（4类业务BO --- 对应5个DO ）
+        ↓(BO→DO，入库生成orderId后回填外键)
+OrderDO(主单)、OrderItemDO(明细)、OrderAddrDO(收货地址)、OrderCouponDO(优惠核销)、OrderPayDO(支付预记录) 【5DO对应5张表】
+        ↓
+CreateOrderRespDTO → OrderVO
+```
 
-##### 1. 前端传参：用户发起“下单请求”
-
-用户在页面上：
-- 选了收货地址
-- 选了商品和数量
-- 选了优惠券
-- 点击“提交订单”
-
-这时候前端发来的只是“用户输入”，还不是完整订单：
-
+##### 1、前端入参 + 请求DTO（不变，原始入参）
 ```json
 {
-  "user_id": 1001,
-  "address_id": 88,
-  "coupon_id": 10,
-  "items": [
-    {"goods_id": 20001, "num": 2}
-  ]
+  "user_id":1001,
+  "address_id":88,
+  "coupon_id":10,
+  "pay_type":1,
+  "items":[{"goods_id":20001,"num":2}]
 }
 ```
-
-- 这一段的业务逻辑：
-  - 前端只负责收集用户输入
-  - 调接口把数据传给后端
-  - 此时还不知道商品价格、库存、优惠券是否可用、最终实付金额是多少
-
-##### 2. 进入 Request DTO：后端把前端参数接住
-
-后端 Controller 收到请求后，先绑定成请求 DTO：
-
 ```go
-CreateOrderDTO {
-    UserID: 1001,
-    AddressID: 88,
-    CouponID: 10,
-    Items: [{GoodsID: 20001, Num: 2}],
+type CreateOrderReqDTO struct {
+	UserID    int64                `json:"user_id"`
+	AddressID int64                `json:"address_id"`
+	CouponID  int64                `json:"coupon_id"`
+	PayType   int                  `json:"pay_type"` // 1微信 2支付宝
+	Items     []CreateOrderItemDTO `json:"items"`
+}
+type CreateOrderItemDTO struct {
+	GoodsID int64 `json:"goods_id"`
+	Num     int   `json:"num"`
 }
 ```
 
-- 这一段的业务逻辑：
-  - 做参数绑定
-  - 做基础参数校验，比如 user_id、address_id、items 是否为空
-  - 做最基础的合法性校验，比如数量必须大于 0
-- DTO 这一层解决的是：你传得对不对
-
-##### 3. Service 补全成 BO：进入真正的业务处理阶段
-
-到了 Service，系统开始围绕“下单”做真正的业务计算。这里很关键：一个 DTO 在 service 层，完全可能被拆成多个 BO，不一定只对应一个 BO。
-- DTO 是前端传过来的 “大包裹”，里面可能包含多个独立业务域的数据。
-- 例子：用户提交 “创建订单 + 上传商品”
-  - 前端只发 1 个请求 → 1 个 CreateOrderAndProductDTO
-  - 但后端必须拆成 2 个独立 BO：
-    - OrderBO（订单业务对象）
-    - ProductBO（商品业务对象）
-  - 因为店铺和商品是两个独立业务域，不能混在一个 BO 里
-
+##### 2、DTO → 拆分4组BO（Service查数据、算金额、补全业务字段，无OrderID）
 ```go
-CreateOrderDTO {
-    UserID: 1001,
-    AddressID: 88,
-    CouponID: 10,
-    Items: [{GoodsID: 20001, Num: 2}],
+// BO1：订单主体基础BO（用户、金额汇总、收件人信息）
+type OrderBaseBO struct {
+	UserID         int64
+	AddressID      int64
+	CouponID       int64
+	ReceiverName   string
+	ReceiverMobile string
+	AddressDetail  string
+	GoodsTotal     int64  // 商品原价合计
+	CouponDeduct   int64  // 优惠券抵扣
+	Freight        int64  // 运费
+	RealPay        int64  // 实付金额
+	PayType        int    // 支付方式
+}
+
+// BO2：商品明细BO（多条商品循环生成）
+type OrderItemBO struct {
+	GoodsID   int64
+	GoodsName string
+	SellPrice int64
+	BuyNum    int
+	LeftStock int  // 当前商品剩余库存
+	ItemSub   int64 // 单品小计
+}
+
+// BO3：优惠+支付附属BO（拆成两个子业务BO，合并为一组业务域）
+// 优惠券核销业务BO
+type OrderCouponBO struct {
+	CouponID    int64
+	DeductMoney int64
+	CouponRule  string // 优惠规则描述：满300减20
+}
+// 订单预支付BO（下单预创建支付单）
+type OrderPayBO struct {
+	PayType    int
+	NeedPayAmt int64
+	ExpireTime int64 // 支付超时时间戳
 }
 ```
+> 关键：**所有BO阶段无OrderID**，主键入库生成后才注入DO。
 
-在 service 内部，可能会先拆成多个 BO：
-
+##### 3、4BO → 5DO（一一映射5张数据库表，入库后补OrderID外键）
+##### 对应数据表
+`t_order(主单)、t_order_item(明细)、t_order_receive_addr(订单收货地址)、t_order_coupon_record(优惠券核销记录)、t_order_pay_record(支付预订单)`
 ```go
-// 订单主业务 BO
-OrderBaseBO {
-    UserID: 1001,
-    AddressID: 88,
-    CouponID: 10,
-    ReceiverName: "张三",
-    ReceiverMobile: "13800000000",
-    AddressDetail: "上海市浦东新区xxx路",
+// DO1：t_order 订单主表
+type OrderDO struct {
+	ID             int64 `db:"id"` // 入库自增orderId
+	UserID         int64
+	GoodsTotal     int64
+	CouponDeduct   int64
+	Freight        int64
+	RealPay        int64
+	PayType        int
+	OrderStatus    int // 1待支付
 }
-// 订单明细商品 BO
-OrderGoodsBO {
-   //  OrderID: 占位，当插入订单成功后，会追加
-    GoodsID: 20001,
-    GoodsName: "机械键盘",
-    Price: 150,
-    Num: 2,
-    Stock: 99,
-    Subtotal: 300,
+
+// DO2：t_order_item 商品明细表
+type OrderItemDO struct {
+	ID        int64 `db:"id"`
+	OrderID   int64 `db:"order_id"` // 后置填充
+	GoodsID   int64
+	GoodsName string
+	SellPrice int64
+	BuyNum    int
+	ItemSub   int64
+}
+
+// DO3：t_order_receive_addr 订单收货地址快照表
+type OrderAddrDO struct {
+	ID             int64 `db:"id"`
+	OrderID        int64 `db:"order_id"`
+	ReceiverName   string
+	ReceiverMobile string
+	AddressDetail  string
+}
+
+// DO4：t_order_coupon_record 优惠券核销记录表
+type OrderCouponRecordDO struct {
+	ID          int64 `db:"id"`
+	OrderID     int64 `db:"order_id"`
+	CouponID    int64
+	DeductMoney int64
+	CouponRule  string
+}
+
+// DO5：t_order_pay_record 支付流水预订单
+type OrderPayDO struct {
+	ID         int64 `db:"id"`
+	OrderID    int64 `db:"order_id"`
+	PayType    int
+	PayAmount  int64
+	ExpireTime int64
+	PayStatus  int //0未支付
 }
 ```
 
-如果项目不大，也可以聚合成一个总 BO：
-
+##### 4、入库执行逻辑（事务内分步）
 ```go
-CreateOrderBO {
-    UserID: 1001,
-    AddressID: 88,
-    CouponID: 10,
-    ReceiverName: "张三",
-    ReceiverMobile: "13800000000",
-    AddressDetail: "上海市浦东新区xxx路",
-    Items: [{
-        GoodsID: 20001,
-        GoodsName: "机械键盘",
-        Price: 150,
-        Num: 2,
-        Stock: 99,
-        Subtotal: 300,
-    }],
-    GoodsAmount: 300,
-    CouponAmount: 20,
-    FreightAmount: 8,
-    PayAmount: 288,
-}
+// 1. BaseBO→OrderDO，插入主单，拿到生成orderId
+orderDO := base2OrderDO(baseBO)
+db.Insert(&orderDO) // 操作DAO数据库接口
+orderId := orderDO.ID
+
+// 2. 剩余全部DO统一回填OrderID
+// 明细
+itemDOList := itemBO2ItemDO(itemBOList)
+for _, item := range itemDOList {item.OrderID = orderId}
+// 地址快照
+addrDO := base2AddrDO(baseBO)
+addrDO.OrderID = orderId
+// 优惠记录
+couponDO := couponBO2CouponDO(couponBO)
+couponDO.OrderID = orderId
+// 支付预单
+payDO := payBO2PayDO(payBO)
+payDO.OrderID = orderId
+
+// 3. 同一事务批量插入剩余4类DO，任意失败整体回滚
+batchSave(itemDOList,addrDO,couponDO,payDO)
 ```
 
-- 这一段负责每个业务领域的业务逻辑：
-  - 根据 address_id 查询地址，补全收件人姓名、手机号、详细地址
-  - 根据 goods_id 查询商品，补全商品名称、当前单价、库存、是否上架
-  - 校验库存是否充足
-  - 计算商品总额、优惠金额、运费、实付金额
-  - 把“用户输入”变成“系统已确认、可执行”的完整业务上下文
-- BO 这一层解决的是：这笔业务到底该怎么做
-- 这里的关键补充：
-  - 一个 DTO 可以拆成多个 BO，因为 service 处理的往往不是“传参结构”，而是多个业务子问题
-  - 比如下单业务里，地址信息、商品明细、金额计算，本身就可以拆成不同 BO
-
-##### 4. 转成 DO 落库：把业务结果存进数据库
-
-当 Service 完成校验和计算后，就会把 BO 转成 DO / PO，准备入库。这里也很关键：一个 BO 往往也不只对应一个 DO，因为数据库通常本来就是多张表。
-
-例如下单时，至少可能拆成下面几个 DO：
-
+##### 5、出库返回：RespDTO → VO
 ```go
-// 订单主表
-OrderDO {
-    UserID: 1001,
-    ReceiverName: "张三",
-    ReceiverMobile: "13800000000",
-    AddressDetail: "上海市浦东新区xxx路",
-    GoodsAmount: 300,
-    CouponAmount: 20,
-    FreightAmount: 8,
-    PayAmount: 288,
-    CouponID: 10,
-    Status: 1,
+// Service层：内部响应DTO
+type CreateOrderRespDTO struct {
+	OrderID     int64
+	RealPay     int64
+	GoodsTotal  int64
+	DeductAmt   int64
+	PayExpireTs int64
+	Status      int
 }
-// 订单明细表
-OrderItemDO {
-    OrderID: 90001,
-    GoodsID: 20001,
-    GoodsName: "机械键盘",
-    Price: 150,
-    Num: 2,
-    Subtotal: 300,
+// controller层： ---> 前端展示VO（状态码转文案、按需裁剪字段）
+type OrderVO struct {
+	OrderID     int64  `json:"order_id"`
+	TotalPrice  int64  `json:"total_price"`
+	PayPrice    int64  `json:"pay_price"`
+	StatusText  string `json:"status_text"` //待付款
+	PayDeadline string `json:"pay_deadline"`//格式化时间
 }
 ```
-
-- 这一段的业务逻辑：
-  - 写入订单主表
-  - 写入订单明细表
-  - 扣减库存
-  - 更新优惠券使用状态
-  - 这些操作通常放在同一个事务里，任一步失败都要回滚
-- DO 这一层解决的是：这些业务结果怎么安全、准确地保存下来
-- 这里的关键补充：
-  - 一个 DTO 进入 service 后，可能拆成多个 BO
-  - 一个 BO 在持久化时，也完全可能拆成多个 DO
-  - 在订单场景里非常常见，因为订单主表、订单明细表、优惠券记录表、库存流水表，本来就是不同存储对象
-
-##### 5. Service 响应 DTO 与 VO：先返回 service 响应 DTO，再按需转成 VO
-
-很多人容易漏掉一件事：DTO 不只有请求 DTO，也可以有 service 的响应 DTO。
-
-比如 service 处理完下单后，先返回给 controller 一个响应 DTO：
-
-```go
-CreateOrderRespDTO {
-    OrderID: 90001,
-    GoodsAmount: 300,
-    CouponAmount: 20,
-    FreightAmount: 8,
-    PayAmount: 288,
-    Status: 1,
-}
-```
-
-然后 controller 再把它转成给前端看的 VO：
-
-```go
-OrderVO {
-    OrderID: 90001,
-    GoodsAmount: 300,
-    CouponAmount: 20,
-    FreightAmount: 8,
-    PayAmount: 288,
-    StatusText: "待支付",
-}
-```
-
-- 这一段的业务逻辑：
-  - service 响应 DTO 更偏“跨层传输”，方便 controller 理解业务处理结果
-  - controller / presenter 再根据前端展示需要，把 `Status: 1` 转成 `StatusText: "待支付"`
-  - 隐藏内部字段，不直接暴露数据库结构
-  - 按前端页面需要输出字段，可能还会做时间、金额格式化
-- VO 这一层解决的是：前端最适合看到什么样的数据
 
 #### 总结：你最该记住的不是定义，而是“职责变化”
 
 这几个对象不是为了显得高级，而是为了让每一层只管自己的事：
 - DTO 只关心“传进来什么”
   - 前端 → 后端（大而全）
+  - 一个dto拆成多个业务域BO
 - BO 只关心“业务怎么算、怎么执行”
   - 业务领域对象（按业务拆分）
   - 1 个 BO = 处理一块完整业务
@@ -326,6 +300,11 @@ ProductDO（商品表）
 ProductSkuDO（商品 SKU 表）
 ProductDetailDO（商品详情表）
 ```
+
+1. **新增一个业务BO → 一般新增1~2张表→新增对应DO**
+   例：加「发票BO」→ `t_order_invoice` → InvoiceDO；加「物流BO」→`t_order_delivery`→DeliveryDO
+2. **BO按业务域拆分，DO严格按数据表拆分**，这是分层设计核心
+3. BO只关心业务规则、数据补全；DO只关心库表映射、外键关联
 
 - 为什么要分这么多层？（你最关心）
   - 解耦！解耦！解耦！
