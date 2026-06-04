@@ -10,13 +10,14 @@ import (
 	"mxshop/app/pkg/options"
 	"mxshop/app/user/srv/controller/user"
 	"mxshop/app/user/srv/data/v1/db"
-	"mxshop/app/user/srv/service/v1"
+	v1 "mxshop/app/user/srv/service/v1"
 	"mxshop/gmicro/app"
 	"mxshop/pkg/log"
 )
 
 // Injectors from wire.go:
 
+// 这是grpc -server端的真正入口方法
 func initApp(nacosOptions *options.NacosOptions, logOptions *log.Options, serverOptions *options.ServerOptions, registryOptions *options.RegistryOptions, telemetryOptions *options.TelemetryOptions, mySQLOptions *options.MySQLOptions) (*app.App, error) {
 	registrar := NewRegistrar(registryOptions)
 	gormDB, err := db.GetDBFactoryOr(mySQLOptions)
@@ -24,12 +25,15 @@ func initApp(nacosOptions *options.NacosOptions, logOptions *log.Options, server
 		return nil, err
 	}
 	userStore := db.NewUsers(gormDB)
+	// 创建 service
 	userSrv := v1.NewUserService(userStore)
+	// 创建 controller/gRPC handler：实际消费controller层的是初始化注册gprc服务时消费的
 	userServer := user.NewUserServer(userSrv)
 	nacosDataSource, err := NewNacosDataSource(nacosOptions)
 	if err != nil {
 		return nil, err
 	}
+	// 创建 RPC Server： userServer 被注入到了 RPC server 里
 	server, err := NewUserRPCServer(telemetryOptions, serverOptions, userServer, nacosDataSource)
 	if err != nil {
 		return nil, err

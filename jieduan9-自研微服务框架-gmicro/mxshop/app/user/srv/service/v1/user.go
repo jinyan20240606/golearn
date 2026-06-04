@@ -12,6 +12,7 @@ type UserDTO struct {
 	dv1.UserDO
 }
 
+// 对controller层暴露的接口。不暴露具体写死的实现
 type UserSrv interface {
 	List(ctx context.Context, orderby []string, opts metav1.ListMeta) (*UserDTOList, error)
 	Create(ctx context.Context, user *UserDTO) error
@@ -20,6 +21,7 @@ type UserSrv interface {
 	GetByMobile(ctx context.Context, mobile string) (*UserDTO, error)
 }
 
+// 这个是小写，外部包无法访问，外部包只能统一通过暴露的NewUserService来获取UserSrv接口的实例
 type userService struct {
 	userStrore dv1.UserStore
 }

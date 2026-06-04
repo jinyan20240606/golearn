@@ -26,6 +26,7 @@ func DTOToResponse(userDTO srvv1.UserDTO) *upbv1.UserInfoResponse {
 }
 
 /*
+分3层的好处：
 controller 层依赖了service， service层依赖了data层：
 controller层能否直接依赖data层： 可以的
 controller依赖service并不是直接依赖了具体的struct而是依赖了interface

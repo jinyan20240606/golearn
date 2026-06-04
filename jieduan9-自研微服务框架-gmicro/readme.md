@@ -2,9 +2,13 @@
 
 - 代码目录见`jieduan9-自研微服务框架-gmicro/mxshop`
 
+- 讲解目的是：将原来的grpc微服务和客户端的原生对接写法改成这种mvc分层写法，并使用微服务标准目录划分架构
+  - 如app下的user用户微服务，服务端使用mvc模式，最终还是会注册到grpc-proto构建提供的`.RegisterUserServer`中
+    - 客户端还是使用grpc-proto提供的`NewUserClient`去链接服务端的controlle层的方法
+
 ## 26周 三层代码结构
 
-- 示例代码目录见
+- 课件演示代码目录见`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv`
 1章 3层代码结构规范
 
 ### 1-1 导入common和app包
@@ -314,6 +318,79 @@ ProductDetailDO（商品详情表）
   - 改业务规则 → 主要改 Service / BO
   - 接口参数变 → 主要改 DTO
   - 分层的价值不是“业务逻辑永远不动”，而是“改动范围尽量可控”
+
+### 1-9 service层的代码如何做到可测试性？
+
+`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/service/v1/user.go`文件中List方法为例，如何关于指定数据层的响应结果来做到可测试性
+
+- 想做到可测试性，就不能固定调用数据操作接口，返回单一的数据层响应结果，而是应该将数据操作接口定义为一个抽象的接口类型，数据data层可以设计不同鸭子类型实现这个接口，这样就可以在测试的时候，自由地选择使用不同鸭子类型数据操作方法，来模拟数据库响应结果
+  - 所以在data层先实现一个抽象接口，不要直接暴露写死的结构体如：`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/data/v1/user.go`文件
+  - 然后在data/v1下根据这个接口实现不同的结构体如见：`db/user.go目录文件和mock/user.go目录文件`，这样通过接口的机制外界动态注入mock和db的接口实现就做到了可测试性
+  - `service/v1/user.go`文件中去使用抽象接口userStore类型，和注入具体的实现结构体方法mock的或真实db的，具有可测试性
+  - `service/v1/user_test.go`: 测试用例就可以直接动态注入mock类型
+
+### 1-10 controller层如何减少对service层的依赖？
+
+- `jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/service/v1/user.go`文件中，对controller层仍然是暴露的是抽象的接口interfce
+  - 即`type UserSrv interface {`
+- 在controller层中使用这个UserSrv interface，它就不用在对外暴漏接口了（因为它已经是最顶层了），它直接实现具体方法就行了
+  - `jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/controller/user/user.go`中使用
+- 最终实际消费controller层的是初始化注册gprc服务时消费的`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/wire_gen.go`
+
+### 1-11 使用copier简化do和dto之间的拷贝转换
+
+- copier库的使用demo见:`jieduan9-自研微服务框架-gmicro/cp`目录
+- copier 就是结构体自动复制工具，同名字段自动复制，不同名用标签指定，你的 DTO/BO/DO 转换全靠它！
+  - Copier 几乎能拷贝 Go 里 99% 你在 DTO/BO/DO 中会用到的类型：数字、字符串、bool、结构体、切片、指针、嵌套结构、兼容类型转换 全部支持！
+
+- 核心用法：`copier.Copy(&目标, &源) // 将2参 拷贝到 1参，务必传指针！`,
+
+
+使用demo文件中代码展示的 copier 8 大核心功能你必须记住！
+1. 同名字段自动拷贝
+   1. Name → Name
+   2. Age → Age
+2. 字段别名拷贝 copier:"别名"
+   1. User.EmployeeCode → Employee.EmployeeId
+   2. 靠 copier:"EmployeeNum" 关联
+3. 忽略字段 copier:"-"
+   1. Salary 不拷贝
+4. 方法 → 字段 自动拷贝
+   1. User.DoubleAge() → Employee.DoubleAge
+   2. 方法名 = 目标字段名
+5. 字段 → 方法 自动调用
+   1. User.Role → 自动调用 Employee.Role(role string)
+6. must 必须拷贝
+   1. copier:"must"：拷贝不到直接报错
+7. 结构体 ↔ 切片 自动转换
+   1. struct → slice
+   2. slice → slice
+8. map ↔ map 自动类型转换
+   1. map[int]int → map[int32]int8
+
+
+
+
+
+#### 原理和性能问题
+
+- Copier 本质就是：利用 Go 反射（reflect）遍历结构体字段，自动赋值。
+- 工作流程：
+  - 传入 源结构体 + 目标结构体（都是指针）
+  - 使用 reflect 获取两者的类型、字段、方法
+  - 遍历每一个字段
+  - 名字相同 → 拷贝
+    - 有 copier:"xxx" 标签 → 按标签匹配
+    - 有 copier:"-" → 跳过
+- 性能数据（真实对比）以单个结构体拷贝为例：
+  - 手写赋值 a=b：最快，0 分配内存
+  - Copier：较慢一点，因为反射 + 遍历 + 内存分配
+- 如果未来你做超高并发，可以换：
+  - gomap
+  - structs
+  - 代码生成工具（go generate）
+  - 手写赋值（最快）
+
 ## 27周 grpc服务封装更方便的rpc服务
 
 ## 28周 深入grpc的服务注册与负载均衡原理
