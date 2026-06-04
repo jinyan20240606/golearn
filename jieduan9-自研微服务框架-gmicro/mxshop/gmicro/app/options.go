@@ -13,14 +13,16 @@ type Option func(o *options)
 
 type options struct {
 	id        string
-	endpoints []*url.URL
+	endpoints []*url.URL // url类型
 	name      string
 
 	sigs []os.Signal
 
-	//允许用户传入自己的实现
-	registrar        registry.Registrar
-	registrarTimeout time.Duration
+	//允许用户传入自己的注册的服务实现
+	// gmicro 不把注册中心写死成 consul，
+	// 它只规定：你给我一个注册器，我在启动和停止时调用它。
+	registrar        registry.Registrar // 注册器
+	registrarTimeout time.Duration      // 注册器的超时时间
 
 	//stop超时时间
 	stopTimeout time.Duration

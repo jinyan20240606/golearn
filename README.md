@@ -34,6 +34,8 @@
       1. `callback(msgList...) // ✅ 正确！打散切片传入`
 5. go中的存在多个defer时，defer的执行顺序是后进先出，最后一个定义的defer先执行
 6. 创建文件时，一定要记得设置文件权限，避免文件权限类错误
+7. select case语法： 是 Go 里专门配合 channel 使用的并发语法，作用是：同时等待多个 channel 操作，谁先就绪就执行谁
+   1. 普通的 switch 不一样：switch 判断值，select 判断 channel 通信事件
 
 ### 类型的表达式运算
 1. `int / int` → 结果是 **整数**（小数直接截断，不会四舍五入）
