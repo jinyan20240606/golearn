@@ -962,6 +962,9 @@ OpenTracing 标准的3大核心概念
 
 - 使用开源的 gRPC + OpenTracing 集成库（自动帮你处理Inject/Extract/父子Span）三方库
   - 三方库源码包见：`jieduan5-分布式系统核心、微服务的部署/jaeger_test/otgrpc` 目录
+    - 只包含Tracing能力
+  - otelgrpc库 是新的 OpenTelemetry（推荐），后面都用这个
+    - 包含Trace + Metrics + Logs3大能力
 - 使用时，本地模拟一个grpc环境，集成这个三方库
   - 先启动 `jieduan5-分布式系统核心、微服务的部署/jaeger_test/server`server服务，再从client触发调用
   - 我们只需要在client端的拦截器中加上otgrpc包提供的拦截器中间件即可

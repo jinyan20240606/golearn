@@ -536,8 +536,80 @@ ProductDetailDO（商品详情表）
 字段对应的类型具体方法实现下面章节讲
 
 ### 2章 开发通用的rpc服务
+- rpc服务和http服务封装的代码新建见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server`
+  - rpc服务模块需要rpc服务端和rpc客户端都在这个目录中一起实现
+#### 2-1 rpc的server数据模型设计
 
+- 主要先实现最基本的rpc的server结构体设计，见：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/server.go`
+
+
+#### 2-2 rpc服务启动过程中的拦截器和rpc接口反射等功能
+- 继续实现见：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/server.go`
+**重点掌握**
+- 默认加的拦截器们中的grpc全链路追踪官方拦截器
+  - 之前的课程中使用的是开源的 gRPC + OpenTracing 集成库`otgrpc`（自动帮你处理Inject/Extract/父子Span）三方库
+      - 只包含Tracing能力
+  - 本节我们使用otelgrpc库 是新的 OpenTelemetry（推荐），后面都用这个
+    - 包含Trace + Metrics + Logs3大能力
+- `google.golang.org/grpc/reflection`grpc的反射功能：`reflection.Register(srv.Server)`
+  - 作用：允许客户端在运行时动态查询服务端注册了哪些 Service、Method，以及对应的 Message 类型和字段定义，而无需预先持有 .proto 文件或生成客户端代码
+    - 反射就是在服务启动时，将编译好的 .proto 描述符（FileDescriptor）加载到服务端的内存中，构建出一个内存注册表。
+      - 当你调用 reflection.Register(s) 时，gRPC 框架会遍历当前进程中所有已经注册的 gRPC Service，自动提取它们底层的 Protobuf Schema 信息（包含服务名、方法签名、消息结构等），并将这些元数据缓存起来
+      - 当外部工具（如 grpcurl）需要获取接口信息时，本质上就是发起了一次普通的 gRPC 远程调用
+    - 列举服务列表
+    - 列举所有 RPC 方法
+    - 获取参数 / 返回值结构
+    - 直接调用接口
+  - 如果不开启反射，gRPC 天生是强契约协议，不开启反射 → 必须用 .proto 文件才能查看 / 调用服务。
+    ```go
+    // 如官方推荐的grpcurl命令行工具
+    grpcurl \
+      -import-path . \       # proto 文件所在目录
+      -proto user.proto \    # 指定你的 proto 文件
+      -d '{"id":1}' \        # 请求参数
+      192.168.1.103:8088 \   # 服务地址
+      user.UserService/GetUser  # 服务名/方法名
+    ```
+- `mxshop/api/metadata`拷贝的kratos的metadata功能,元数据服务
+  - Kratos 团队为了解决“gRPC 反射功能无法通过 HTTP 直接访问”这一痛点而设计的方案。它将原生 gRPC 的二进制反射能力，映射成了标准的 RESTful API
+  - 必须依赖服务端先开启 gRPC 反射（Reflection）才能正常工作
+#### 2-3&4缺失
+#### 2-5 service的timeout的拦截器实现原理
+- 继续实现见：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/server.go`
+  - 集成到`append(unaryInts, srvintc.UnaryTimeoutInterceptor(srv.timeout))`方法中
+- 添加超时控制拦截器 --- 直接照搬的go-zero框架的内部拦截器实现
+  - 拦截器源码见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/serverinterceptors/timeoutinterceptor.go`
+
+#### 2-6 app中如何启动gmicro的rpc服务
+我们将刚才封装的基本通路给mxshop项目app层调用，并启动rpc服务，流程串联起来
+1. 我们首先mxshop业务项目运行入口的是cmd目录 ，cmd运行后会进入到app目录执行，如执行的user服务，就会到app/user/srv
+   1. cmd模块：jieduan9-自研微服务框架-gmicro/mxshop/cmd/user/user.go
+      1. 执行"mxshop/app/user/srv"的NewApp("user-server").Run()
+         1. run(cfg)：cfg就是mxshop/app/user/srv/config初始化的配置
+            1. initApp
+               1. NewUserRPCServer
+               2. NewUserApp
+2. 我们只需要在run方法中集成我们gmicro框架功能即可，集成后才会真正启动gmicro运行时微服务，重点是内部的`NewUserApp`方法内部流程如下：
+   1. 先引入gmicro包：`gapp "mxshop/gmicro/app"`
+   2. 需要1. 初始化日志系统（根据配置加载日志）
+      1. 其中还需要`jieduan9-自研微服务框架-gmicro/mxshop/configs/user/srv.yaml`写一个user专用的配置文件，如配置了log的配置，则需要将log的配置写到user的srv.yaml中
+      2. 后续从docker文件启动时会传入这个配置内容，`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/config/config.go`中会调用log库的命令行解析配置功能
+   3. 集成使用gmicro包的方法，组装并创建应用实例 `return gapp.New(`
+      1. 作用：把 服务名、RPC服务具体方法、注册服务具体方法 传进New方法进行执行创建
+      2. 具体rpc服务和注册服务具体方法不是直接写在NewUserApp这里，是上层调用链实参传进来的。
+         1. rpc服务：在单独的文件`./rpc.go`封装下NewUserRPCServer方法，由初始化方法`app/user/srv/wire_gen.go`调用`NewUserApp`传参传进来使用
+            1. 其中的对应的配置选项单独维护在`jieduan9-自研微服务框架-gmicro/mxshop/app/pkg/options/server.go`
+               1. 配置一些最上层的ip地址和端口号之类的
+
+
+#### 2-7 缺失记录
+
+后面视频没了，自己看下源码，理解下关键链路即可
 ## 28周 深入grpc的服务注册与负载均衡原理
+就一章：服务注册、服务发现和负载均衡
+
+### 1-1 配置-服务注册配置
+
 ## 29周 基于gin封装api服务
 
 ## 30周 可观测的终极解决方案
