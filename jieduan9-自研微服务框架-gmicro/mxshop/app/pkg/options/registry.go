@@ -1,8 +1,9 @@
 package options
 
 import (
-	"github.com/spf13/pflag"
 	"mxshop/pkg/errors"
+
+	"github.com/spf13/pflag"
 )
 
 type RegistryOptions struct {
@@ -25,6 +26,7 @@ func (o *RegistryOptions) Validate() []error {
 	return errs
 }
 
+// 映射启动命令行传进来的参数
 func (o *RegistryOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Address, "consul.address", o.Address, ""+
 		"consul address, if left , default is 127.0.0.1:8500")

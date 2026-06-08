@@ -30,6 +30,7 @@ func (c *Config) Validate() []error {
 func (c *Config) Flags() (fss cliflag.NamedFlagSets) {
 	c.Log.AddFlags(fss.FlagSet("logs"))
 	c.Server.AddFlags(fss.FlagSet("server"))
+	// 注册中心的配置文件集成
 	c.Registry.AddFlags(fss.FlagSet("registry"))
 	c.Telemetry.AddFlags(fss.FlagSet("telemetry"))
 	c.MySQLOptions.AddFlags(fss.FlagSet("mysql"))
@@ -40,8 +41,11 @@ func (c *Config) Flags() (fss cliflag.NamedFlagSets) {
 func New() *Config {
 	//配置默认初始化
 	return &Config{
-		Log:          log.NewOptions(),
-		Server:       options.NewServerOptions(),
+		// 日志的配置文件集成
+		Log: log.NewOptions(),
+		// grpc服务执行器的配置文件集成
+		Server: options.NewServerOptions(),
+		// 注册中心的配置文件集成
 		Registry:     options.NewRegistryOptions(),
 		Telemetry:    options.NewTelemetryOptions(),
 		MySQLOptions: options.NewMySQLOptions(),

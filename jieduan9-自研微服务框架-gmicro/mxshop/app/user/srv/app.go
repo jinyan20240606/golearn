@@ -36,6 +36,7 @@ func NewRegistrar(registry *options.RegistryOptions) registry.Registrar {
 	if err != nil {
 		panic(err)
 	}
+	// consul客户端实例传进consul方法
 	r := consul.New(cli, consul.WithHealthCheck(true))
 	return r
 }

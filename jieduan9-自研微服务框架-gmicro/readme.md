@@ -583,17 +583,18 @@ ProductDetailDO（商品详情表）
 #### 2-6 app中如何启动gmicro的rpc服务
 我们将刚才封装的基本通路给mxshop项目app层调用，并启动rpc服务，流程串联起来
 1. 我们首先mxshop业务项目运行入口的是cmd目录 ，cmd运行后会进入到app目录执行，如执行的user服务，就会到app/user/srv
-   1. cmd模块：jieduan9-自研微服务框架-gmicro/mxshop/cmd/user/user.go
-      1. 执行"mxshop/app/user/srv"的NewApp("user-server").Run()
-         1. run(cfg)：cfg就是mxshop/app/user/srv/config初始化的配置
-            1. initApp
-               1. NewUserRPCServer
-               2. NewUserApp
+   1. `cmd模块`：jieduan9-自研微服务框架-gmicro/mxshop/cmd/user/user.go
+      1. 执行"mxshop/app/user/srv"的`NewApp("user-server").Run()`
+         1. `run(cfg)`：cfg就是mxshop/app/user/srv/config初始化的配置
+            1. `initApp`(传入相关配置option)
+               1. `NewUserRPCServer`（使用配置）
+               2. `NewUserApp`（使用配置）
 2. 我们只需要在run方法中集成我们gmicro框架功能即可，集成后才会真正启动gmicro运行时微服务，重点是内部的`NewUserApp`方法内部流程如下：
    1. 先引入gmicro包：`gapp "mxshop/gmicro/app"`
    2. 需要1. 初始化日志系统（根据配置加载日志）
       1. 其中还需要`jieduan9-自研微服务框架-gmicro/mxshop/configs/user/srv.yaml`写一个user专用的配置文件，如配置了log的配置，则需要将log的配置写到user的srv.yaml中
       2. 后续从docker文件启动时会传入这个配置内容，`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/config/config.go`中会调用log库的命令行解析配置功能
+      3. 配置内容在run方法的行参中传进来的
    3. 集成使用gmicro包的方法，组装并创建应用实例 `return gapp.New(`
       1. 作用：把 服务名、RPC服务具体方法、注册服务具体方法 传进New方法进行执行创建
       2. 具体rpc服务和注册服务具体方法不是直接写在NewUserApp这里，是上层调用链实参传进来的。
@@ -601,16 +602,382 @@ ProductDetailDO（商品详情表）
             1. 其中的对应的配置选项单独维护在`jieduan9-自研微服务框架-gmicro/mxshop/app/pkg/options/server.go`
                1. 配置一些最上层的ip地址和端口号之类的
 
-
-#### 2-7 缺失记录
-
-后面视频没了，自己看下源码，理解下关键链路即可
 ## 28周 深入grpc的服务注册与负载均衡原理
 就一章：服务注册、服务发现和负载均衡
 
 ### 1-1 配置-服务注册配置
 
+1. 先在`jieduan9-自研微服务框架-gmicro/mxshop/app/pkg/options/registry.go`，在入口层单独维护注册中心的配置文件，未来传入这个配置参数
+2. 再统一在`mxshop/app/user/srv/config/config.go`中调用专门解析配置文件的配置方法，配置这个registry的配置
+   1. 后续run方法中就会自动接受到这个解析好的配置参数 
+### 1-2 kratos对consul服务注册的封装
+
+- 基于gmicro框架定义的服务注册接口，解耦封装上层用的服务注册功能
+  - 我们这里直接拷贝kratos的consul源码，并修改成适配我们的接口
+  - 熟悉下consul中的调用链路
+  - 对外只暴漏个`New`方法，返回一个服务注册实例
+
+- 见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul`
+
+### 1-3 将服务注册到consul中
+
+前面封装好了consul，看下在gemicro中如何使用这个consul，将微服务注册进来
+- 然后在`NewUserApp`方法中集成注册consul服务
+  - 主要在`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/app.go`实现NewRegistrar方法
+    - 在调用方手动创建consul-api客户端实例传进前面封装的框架提供的consul注册的`New`方法,返回一个服务注册实例
+  - 然后在`NewUserApp`的`gapp.New(`中注入这个服务注册实例
+### 1-4 客户端封装的数据结构设计
+
+- 主要开始封装`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/client.go` rpc的客户端逻辑，之前讲的都是rpc服务端逻辑
+  - 先定义客户端的基础配置结构体：`clientOptions`,包含rpc服务端地址，拦截器，服务发现，负载均衡名字，自定义日志等配置
+    - 这里的自定义log参数不能直接传递默认log.logger,系统里面自带的logger含锁逻辑，参数值传递，直接就失效了，log可以只传限定的几个打印方法即可，通过gemicro的log库，暴漏一个log抽象接口，调用方只需传打印方法的接口实现即可
+
+- 重要细节
+  - 客户端逻辑中，会引用`gmicro/registry/registry.go`提供的服务发现接口和逻辑
+
+### 1-5 封装dial方法进行客户端生成
+
+- 主要封装Dial即客户端的拨号方法，分为安全链接和不安全链接的拨号方法
+- 代码见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/client.go`的`DialInsecure(`法和`Dial(`方法
+### 1-6 封装client端的imeout拦截器
+
+- 前面封装好dial后，在`jieduan9-自研微服务框架-gmicro/mxshop/app/user/client/client.go`客户端代码进行链接测试
+- 接着实现一个client的timeout拦截器
+- （拦截器这块基本都是借箭参考的`go-zero`源码，的包括后续的tracing，熔断，普罗米修斯拦截器等）
+### 1-7 grpc的服务发现的resolver接口
+- 讲解下client端的服务发现内部调用原理
+- 原来的项目中是直接引用的`grpc-consul-resolver`，实现的服务发现
+  - 我们分析下这个包的源码实现，内部是如何解析协议的，实现一个什么样的接口
+    - 它内部是基于grpc官方api：`"google.golang.org/grpc/resolver"`实现的consul版的服务发现
+  - 见`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/initialize/srv_conn.go`
+  - 后面我们脱离consul解耦，基于`"google.golang.org/grpc/resolver"`实现自己通用解耦的服务发现
+#### grpc服务发现相关原理概念
+
+- gRPC 只定义了【服务发现接口】，没有内置任何现成实现！你必须自己实现，或者用第三方库！
+  - 因为：服务发现组件太多，如下面协议
+    - direct://       → 自己实现
+    - consul://       → 第三方 grpc-consul-resolver 实现
+    - etcd://         → 第三方 etcd resolver 实现
+    - k8s://          → 第三方 k8s resolver 实现
+  - gRPC 不可能内置所有，让框架可扩展，让开发者自定义，gRPC 只提供接口，不提供实现！
+  - RPC服务发现底层只提供了 3 个接口让用户自己去封装吧！：
+    - resolver.Builder   // 构造器（注册协议）
+    - resolver.Resolver  // 解析器（去拿地址、监听变化）
+    - resolver.ClientConn// 回调（把地址还给 gRPC）
+- gRPC客户端拨号服务发现时的原理：`grpc.Dial("consul://127.0.0.1:8500/user-srv")`
+  - 内部流程：
+    - 解析 URL：scheme=consul、authority=127.0.0.1:8500、endpoint=user-srv
+    - gRPC 全局 map 里找 scheme=consul 的 Builder实例
+    - 调用 Builder.Build() 生成一个 Resolver
+      - 归属：google.golang.org/grpc/resolver
+      - 作用：服务发现
+      - 干什么：通过协议（direct/consul/discovery）找到服务地址列表
+      - 返回：Resolver
+    - Resolver 负责：
+      - 去 调用 外部registry.Discovery 抽象 --> 拉服务列表 (解耦)
+        - 调用 registry.Discovery 抽象 -> 当前具体实现是客户端配置项传入的consul.Registry 注册服务具体实现
+      - 持续 watch 变化
+      - 把地址列表通过 cc.UpdateState() 喂给 gRPC
+  - 核心就三个接口
+      ```go
+      // 1. Builder：工厂，注册 scheme
+      type Builder interface {
+          // 改成你想要的协议名，如 nacos、etcd。
+          Scheme() string
+          // 解析 target.Authority（注册中心地址）
+          // 初始化你自己的注册中心客户端
+          Build(target Target, cc ClientConn, opts BuildOptions) (Resolver, error)
+      }
+
+      // 2. Resolver：长连接监听
+      type Resolver interface {
+          ResolveNow(ResolveNowOptions) // 强制刷新
+          Close()                         // 停止
+          update() // 调用你的注册中心 API 获取服务实例列表
+          watch() // 核心watch监听
+      }
+
+      // 3. ClientConn：回调，把地址塞给 gRPC
+      type ClientConn interface {
+          UpdateState(State) // State 里有 []Address
+      }
+      ```
+
+
+### 1-8 自定义实现directBuilder实现服务发现器
+
+我们脱离consul解耦，基于`"google.golang.org/grpc/resolver"`实现自己通用解耦的服务发现器
+
+- gemicro中自定义服务发现器，代码见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver` 
+  - 客户端链接服务发现的两种连接方式：
+    - 直连：客户端 → 写死 IP:Port → 服务端，让 gRPC 客户端不用注册中心，直接用地址连接具体的微服务地址
+      - 如`direct:///127.0.0.1:8080`
+        - 将原来的地址加上一个协议头和没有认证信息的话就三个斜杠，如：`direct:///127.0.0.1:8078`
+        - 正常情况下非直连时authority是要写成注册中心地址即ip端口号地址的，直连的话它不需要 authority（不需要额外注册中心地址），只把 path 当成最终要连的地址，所以写成3个斜杠
+      - **直连其实就是grpc没有集成服务发现的最原始链接模式，直接传入一个微服务地址**
+        - 如：`jieduan2-dianshangxiangmu-weifuwu/week4-rpc-grpc/part4-grpc/grpc_test/client/client.go`
+    - 注册中心响应：客户端 → 注册中心查询地址 → 服务端
+      - 如`consul://127.0.0.1:8500/user-srv?wait=14s`
+- 实现后，在`jieduan9-自研微服务框架-gmicro/mxshop/app/user/client/client.go`客户端代码进行直连模式的链接测试
+  - 用法与`jieduan3-0-1shixian-weifuwu-kuangjia/mxshop-api/goods-web/initialize/srv_conn.go`类似
+### 1-9 grpc的服务发现和负载均衡的原理
+
+![alt text](image-3.png)
+
+- grpc客户端有2条线，上面是链接resolver进行服务发现，下面的picker接口进行负载均衡
+```go
+ClientConn
+  ↓（注册 scheme）
+Resolver（consul/dns/direct）→ 拿到地址列表 [ip1, ip2, ip3]
+  ↓ 把地址列表交给
+Balancer（round_robin/pick_first/自定义）
+  ├─ 为每个地址建 SubConn（长连接）
+  ├─ 监控每个 SubConn 状态（READY/IDLE/TRANSIENT_FAILURE）
+  └─ 生成 Picker接口
+       ↓
+每次 RPC → 调用 Picker.Pick() → 选出一个 SubConn 发请求
+```
+- Resolver：给地址列表
+  - 归属：google.golang.org/grpc/resolver
+  - resolver的Builder接口
+    - 作用：服务发现
+    - 干什么：通过协议（direct/consul/discovery）找到服务地址列表
+    - 返回：Resolver
+- Balancer：把所有地址变成可用连接，输出一个Picker接口
+  - balancer.Builder （负载均衡用的）
+    - 归属：google.golang.org/grpc/balancer
+    - 作用：负载均衡
+    - 干什么：管理连接、创建 SubConn、生成 Picker
+    - 返回：Balancer
+- Picker：每次请求，选一个连接（真正负载均衡，负载均衡算法本体）
+- 架构里的位置上下层关系
+  - 上层：resolver.Builder → 造 Resolver（服务发现）
+    - 输出：地址列表 [ip1, ip2, ip3]
+  - 下层：balancer.Builder → 造 Balancer（负载均衡）
+    - 输入：地址列表
+    - 输出：Picker（选连接）
+### 1-10 通过WithResolvers显示指定resolver
+
+现在接着实现自定义服务发现器的注册中心响应模式：客户端 → 注册中心查询地址 → 服务端
+
+见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery`
+
+1. 本小节先使用`grpc.WithResolvers()`先给【本次 Dial 客户端】单独注册一个 `自定义的discovery的resolver 解析器`, 只给当前这一个 client 连接使用，支持可以动态传入注册中心客户端
+   1. 不能使用原来直连模式的全局注册解析器的写法了，因为全局注册解析器是单例的，不能动态可扩展传入注册中心客户端
+   2. 见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/client.go`中
+
+- 所以这里不能再走全局单例注册，而是要在每次 [`grpc.DialContext()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/client.go:166) 前，通过 [`grpc.WithResolvers()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/client.go:144) 给“当前这一次连接”单独挂一个 resolver builder
+- 这样每个 client 连接都可以有自己的 discovery 实现、自己的 consul/nacos 客户端、自己的超时配置，互不污染
+
+核心流程：
+
+```go
+if options.discovery != nil {
+	grpcOpts = append(grpcOpts, grpc.WithResolvers(
+		discovery.NewBuilder(
+			options.discovery,
+			discovery.WithInsecure(insecure),
+		),
+	))
+}
+```
+
+- 上面这段代码的关键点在于：[`discovery.NewBuilder()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery/builder.go:40) 返回的是一个“带状态的 builder”，里面保存了当前传入的 [`registry.Discovery`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/registry.go:16)
+- 当 gRPC 真正开始解析类似 `discovery:///user-srv` 这种目标地址时，会回调 [`builder.Build()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery/builder.go:55)
+- 在 [`Build()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery/builder.go:55) 里，不是直接写死 consul，而是统一通过 [`b.discoverer.Watch()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery/builder.go:66) 创建 watcher
+- 也就是说：resolver 层只依赖 discovery 抽象，不依赖 consul 具体实现
+
+### 1-11 通过观察者模式实现服务发现
+
+- 见 [`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/registry.go`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/registry.go)、[`service.go`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/service.go) 和 [`watcher.go`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/watcher.go)
+- 这一层真正实现了“观察者模式”
+  - 被观察者：[`serviceSet`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/service.go:10)，内部维护某个服务名当前的实例列表，以及所有 watcher 订阅者
+  - 观察者：[`watcher`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/watcher.go:9)，每个 resolver 拿到的就是一个 watcher
+  - 事件通知：[`serviceSet.broadcast()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/service.go:17)，实例变化后把事件投递给所有 watcher
+- 当客户端调用 [`Registry.Watch()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/registry.go:159) 时：
+  1. 先找到或创建当前服务名对应的 [`serviceSet`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/service.go:10)
+  2. 再创建一个当前连接专属的 [`watcher`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/watcher.go:9)
+  3. 把这个 watcher 注册进 [`serviceSet.watcher`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/service.go:12)
+  4. 如果当前已经有缓存实例，立即给 watcher 推一个初始事件，避免第一次阻塞
+  5. 如果这个服务之前还没人监听，则启动 [`resolve()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/registry.go:197) 后台协程轮询 consul
+- [`resolve()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/registry.go:197) 做两件事：
+  - 首次从 consul 拉一次全量实例
+  - 后台基于 consul index 持续阻塞查询，发现变化后调用 [`broadcast()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/service.go:17)
+- 而 resolver 侧的 [`discoveryResolver.watch()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery/resolver.go:27) 会一直调用 [`w.Next()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/registry.go:28)
+- 一旦 watcher 收到通知，就从 [`serviceSet.services`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/watcher.go:25) 里拿最新实例，再交给 [`r.update()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery/resolver.go:47) 转成 gRPC 可识别的地址列表
+- 最终通过 [`cc.UpdateState()`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery/resolver.go:76) 通知 gRPC 连接池刷新可用节点
+
+#### discovery 与 consul 的关系
+
+可以按“分层职责”理解：
+
+- [`registry.Discovery`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/registry.go:16) 是抽象接口，定义“怎么查服务、怎么订阅服务变化”
+- [`consul.Registry`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/registry/consul/registry.go:81) 是这个抽象的一种具体实现，它底层用 consul 完成服务查询与监听
+- [`resolver/discovery`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/resolver/discovery) 是 gRPC 适配层，负责把 discovery 返回的服务实例列表翻译成 gRPC 地址
+
+所以关系不是“discovery 和 consul 谁包含谁”，而是：
+
+```text
+客户端 Dial
+  -> gRPC discovery resolver
+      -> 调用 registry.Discovery 抽象
+          -> 当前具体实现是 consul.Registry
+              -> consul 查询服务实例 / 监听变化
+                  -> 返回 ServiceInstance 列表
+      -> resolver 转成 gRPC 地址
+  -> gRPC 与服务端建立连接
+```
+
+一句话：**discovery 是接口能力层，consul 是 discovery 的一种实现，resolver/discovery 是把这套能力接到 gRPC 上的桥接层。**
+
+### 1-12 测试consul的服务发现功能
+- 见`jieduan9-自研微服务框架-gmicro/mxshop/app/user/client/client.go`
+### 1-13 grpc的负载均衡架构原理
+
+- 为什么要自定义实现？---- 首先封装一个gemicro微服务框架肯定要支持可扩展性，不能内置写死
+  - gRPC 官方自带的负载均衡：`grpc.WithDefaultServiceConfig({"loadBalancingPolicy": "round_robin"})`
+    - 启用 gRPC 官方自带的简陋负载均衡策略
+    - 官方不能运行时动态切换负载均衡算法
+    - 官方无法传递节点元数据（权重、区域、机房、版本）
+    - 官方 balancer 不易做高级策略
+      - 权重轮询
+      - 同机房优先
+      - 流量染色
+      - 服务版本路由
+      - 自定义熔断、降级、限流
+      - 官方完全不支持！
+  - 我们自定义的selector目录，就是为了 替换 掉这个官方 round_robin策略！
+    - 可自定义任意扩展（随机、轮询、权重、一致性哈希、同机房优先）
+    - 能拿到服务实例元数据
+    - 微服务生产级必备
+
+前面的架构图可以看到，自定义实现负载均衡重点是要实现`picker`和`banlancer`2大接口
+
+- 先看文档说明：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/selector/doc.go`
+  - Builder接口返回一个Balancer，与之前resolver的Builder返回一个Resolver，不要混
+- 我们要自行实现解耦的这个banlancer
+  - 源代码见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/selector/`
+    - 和 单独的封装文件 `jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/balancer.go`
+  - 主要在客户端中使用见：`jieduan9-自研微服务框架-gmicro/mxshop/app/user/client/client.go`
+      - selector.SetGlobalSelector(random.NewBuilder()) // 1. 定义用【随机】算法
+      - rpc.InitBuilder()                               // 2. 把自定义 selector 注册给 gRPC
+      - 然后你们使用：rpc.WithBalancerName("selector")
+        - 它内部`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/client.go`就是`grpc.WithDefaultServiceConfig({"loadBalancingPolicy": "` + options.balancerName + `,
+          - 还是grpc设置默认负载均衡的写法，换上自定义的策略名字
+      - 最终效果：**gRPC 不再使用官方的 round_robin而是使用你们自研的、可随时切换算法的 selector！**
+- ![alt text](image-3.png)
+
+
+### 1-14 grpc负载均衡源码分析
+
+- 略，需要再看
+- 豆包总结如下：
+  1. resolver 从 Consul 拿到节点列表
+  2. 交给 gRPC 内部 balancer
+  3. balancer 调用你们的 Build()
+  4. 把节点转换成你们的 Node
+  5. 每次请求 → 调用 Pick()
+  6. Pick() → 调用你们自己的 Select()
+  7. 选择一个节点 → 发起请求
+### 1-15 pickfirst和roundrobin源码分析
+
+- 略，需要再看
+- 源码文件在源码里的`roundrobin.go`
+
+### 1-16 kratos负载均衡源码分析
+
+- 我们直接从kratos框架源码中搬运过来的相关的源码实现，课程中老师直接提供好的压缩包 
+  - 压缩包包含：搬运后，稍微改下适配下当前项目的引用路径
+- 解压在`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver`下多2个文件
+  - selector目录
+  - balancer.go文件（详细原理见文件注释）
+- 这一块本质上是：**复用 gRPC 自己的连接管理能力，只把负载均衡算法策略这件事替换成我们自己的策略**
+  - 实现后对外暴漏的入口文件有2个：`rpcserver/balancer.go`和具体算法对象
+  - 本质上入口文件就是`rpcserver/balancer.go`,主要做的就是基于`"google.golang.org/grpc/balancer"`官方模块进行扩展出自定义的复杂均衡器
+    - 核心就是完成将自定义的balancer和balancerName注册到grpc的balancer集合里：`balancer.Register(b)`
+    - image-3架构图中Resolver到Builder接口这条路，Builder.Build()时返回具体的Balancer时，就能根据配置的自定义的balancerName，返回对应的我们自定义的balancer
+- 源码实现也就是把 kratos 的 selector / balancer 思路搬过来，挂到当前 gmicro 的客户端调用链里
+
+#### 零、先看各个文件之间的关系
+
+先记 5 个角色：
+
+- `client.go`：客户端入口，决定本次连接用什么负载均衡的名字
+- `balancer.go`：把自定义负载均衡适配接到 gRPC 上 --- 这相当于是入口文件
+  - 把你们自己写的 【selector 负载均衡算法】，完美包装成 gRPC 官方要求的 Picker，让 gRPC 原生框架可以直接使用
+- `selector/selector.go` + `selector/balancer.go`：定义负载均衡核心接口
+  - 真正的默认实现是在 `default_selector.go` 里的 `Default.Select()`
+- `default_selector.go` + `default_node.go`：负责把“原始服务节点”一步步组装成“可被算法挑选的节点”
+  - `default_node.go` 先把服务发现拿到的实例，转成最基础的 Node
+    - 这个文件只在`balancer.go`中使用
+  - `default_selector.go` 再把这些 Node 交给 NodeBuilder 包装成 WeightedNode
+    - 这个文件只在具体算法中使用
+    - 然后再把 WeightedNode 交给具体 Balancer 去选
+      - 这里的 Balancer 指的是 `selector` 体系里的算法对象，不是外层 `rpcserver/balancer.go`
+      - 比如 p2c、random、wrr 这些，都是这里说的 Balancer
+      - 也就是说这里的意思其实就是：把“带权重的节点列表”交给具体选路算法做最终决策
+  - 调用关系：具体算法对象是入口，嵌套default_selector的类型，负责调用选择方法，选择具体的WeightNod节点
+- `node` 目录负责节点权重模型
+- `p2c`、`random`、`wrr` 这些目录负责具体算法
+
+---
+
+- 总结：对外暴露给客户端的入口是，只要从这2个文件入手实现即可
+  - `balancer.go`
+  - `p2c`、`random`、`wrr`的DefaultBuilder方法， 这些目录负责具体算法
+
+先把这层关系记住，后面看原理就不容易乱。
+
+
+**完整链路可以理解成：**
+
+```text
+客户端发起 RPC
+  -> discovery resolver 从注册中心拿实例列表
+  -> gRPC 为每个实例维护 SubConn
+  -> 自定义 balancer即`rpcserver/balancer.go` 把 SubConn 包装成 selector.Node
+  -> selector即`具体的算法策略`, 根据 P2C + EWMA或其他策略算法 选出一个最佳节点
+  -> gRPC 使用该节点对应的 SubConn 发请求
+  -> 请求结束后把错误/耗时/返回元数据传回 done 回调
+  -> EWMA 更新该节点的延迟、成功率、并发统计
+  -> 下一次请求继续基于新状态做选择
+```
+
+这就是典型的“服务发现 + 连接管理 + 动态负载均衡”组合。
+
+一句话：**resolver 负责“发现节点”，selector 负责“挑节点”，gRPC适配层 负责“连节点”。**
+
+#### 五、这套实现最重要的设计价值
+
+重点不是某个算法公式，而是这几个设计思想：
+
+1. **职责拆分清晰**
+   - resolver 只管发现
+   - selector 只管选择
+   - gRPC 只管连接
+
+2. **面向抽象编程**
+   - 通过 [`selector.Builder`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/selector/selector.go:28)、[`BalancerBuilder`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/selector/balancer.go:14)、[`WeightedNodeBuilder`](jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/selector/balancer.go:35) 解耦算法与框架
+   - 以后想换成随机、加权轮询、最小连接数，都可以继续复用这套骨架
+
+3. **负载均衡不是静态配置，而是动态反馈系统**
+   - 节点好不好，不靠人工配置死权重
+   - 而是根据真实调用结果持续修正
+
+4. **用最小侵入方式接管 gRPC**
+   - 没有推翻 gRPC 内部机制
+   - 只是把“挑连接”的策略替换成自己的实现
+
+一句话总结：**kratos 这套源码的核心价值，不在于某个具体公式，而在于它把“节点选择”从 gRPC 默认轮询里抽离出来，做成了一套可插拔、可反馈、可演进的动态负载均衡框架。**
+### 1-17 负载均衡使用测试
+1. 在`jieduan9-自研微服务框架-gmicro/mxshop/app/user/client/client.go`中使用配置
+2. 进入`jieduan9-自研微服务框架-gmicro/mxshop/cmd/user/user.go`将这个微服务启动起来
+   1. 运行命令：`run ./user.go --server.port=8881 --server.http-port=6881`
+   2. app/mxshop 是 HTTP服务层，其他同级目录是RPC服务层，server.http-port这个配置主要用于HTTPWeb服务层使用，后面讲
 ## 29周 基于gin封装api服务
+就一章：基于gin封装通用的restserver
+### 1-1 设计restserver的通用结构
+
 
 ## 30周 可观测的终极解决方案
 

@@ -124,7 +124,7 @@ func (a *App) Run() error {
 	a.cancel = cancel
 	eg, ctx := errgroup.WithContext(ctx)
 	wg := sync.WaitGroup{}
-
+	// 启动服务必须放在协程里，因为他是异步，否则会卡住主程序
 	for _, srv := range servers {
 		srv := srv
 

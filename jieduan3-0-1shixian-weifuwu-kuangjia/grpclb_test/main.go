@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	// grpc的consul负载均衡插件
+	// grpc的consul服务发现插件
 	// 导入后自动注册 consul:// 协议，让gRPC Dial能识别
 	_ "github.com/mbobakov/grpc-consul-resolver" // It's important
 
@@ -25,6 +25,7 @@ func main() {
 		"consul://192.168.1.103:8500/user-srv?wait=14s&tag=srv",
 		// 关闭TLS安全校验（开发环境用）
 		grpc.WithInsecure(),
+		// 启用 gRPC 官方自带的默认负载均衡
 		// 重点：设置gRPC负载均衡策略为 round_robin（轮询）
 		// 10 次请求会轮流分发到不同服务实例：
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy": "round_robin"}`),

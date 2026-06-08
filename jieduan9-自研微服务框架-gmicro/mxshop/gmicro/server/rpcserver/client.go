@@ -2,16 +2,18 @@ package rpcserver
 
 import (
 	"context"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"mxshop/gmicro/server/rpcserver/clientinterceptors"
 	"mxshop/gmicro/server/rpcserver/resolver/discovery"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
 	grpcinsecure "google.golang.org/grpc/credentials/insecure"
 
-	"google.golang.org/grpc"
 	"mxshop/gmicro/registry"
 	"mxshop/pkg/log"
 	"time"
+
+	"google.golang.org/grpc"
 )
 
 type ClientOption func(o *clientOptions)
@@ -19,7 +21,7 @@ type ClientOption func(o *clientOptions)
 type clientOptions struct {
 	endpoint string
 	timeout  time.Duration
-	// discovery接口
+	// discovery接口服务发现的方法
 	discovery     registry.Discovery
 	unaryInts     []grpc.UnaryClientInterceptor
 	streamInts    []grpc.StreamClientInterceptor
@@ -85,10 +87,12 @@ func WithBalancerName(name string) ClientOption {
 	}
 }
 
+// 创建一个不安全的grpc拨号方法
 func DialInsecure(ctx context.Context, opts ...ClientOption) (*grpc.ClientConn, error) {
 	return dial(ctx, true, opts...)
 }
 
+// 创建一个安全的grpc拨号方法
 func Dial(ctx context.Context, opts ...ClientOption) (*grpc.ClientConn, error) {
 	return dial(ctx, false, opts...)
 }
@@ -133,14 +137,24 @@ func dial(ctx context.Context, insecure bool, opts ...ClientOption) (*grpc.Clien
 
 	//TODO 服务发现的选项
 	if options.discovery != nil {
+		// 给【本次 Dial 客户端】单独注册一个 resolver 解析器
+		// 		只给当前这一个 client 连接使用
+		// 可以动态传入注册中心客户端
+		// 不污染全局
 		grpcOpts = append(grpcOpts, grpc.WithResolvers(
 			discovery.NewBuilder(
 				options.discovery,
+				// 我要连接的是【不安全的 gRPC 服务（没有 TLS）】，不要尝试加密
 				discovery.WithInsecure(insecure),
 			),
 		))
 	}
 
+	// 	这两个 insecure的逻辑 长得一样，作用完全不同
+	// 一个给 服务发现 用
+	// 一个给 gRPC 连接 用
+
+	// 是否安全
 	if insecure {
 		grpcOpts = append(grpcOpts, grpc.WithTransportCredentials(grpcinsecure.NewCredentials()))
 	}
