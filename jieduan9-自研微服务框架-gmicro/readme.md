@@ -1115,9 +1115,115 @@ a.cancel()
 
 就一章：opentelemetry实现链路追踪
 
+1. 官方文档：https://opentelemetry.io/zh/docs/concepts/observability-primer/ 
+   1. https://github.com/open-telemetry/docs-cn/blob/main/OT.md
+2. 我们的在实际生产环境中的监控也叫APM，主要包括3个大点：1-日志，2-tracing，3-metrics指标。
+   1. APM的两种监控子类Logging日志：目前常见的日志收集平台有EFK、Fluentd.
+   2. Distributed Tracing(分布式链路追踪)是APM(Application Performance Monitoring)的子集。
+   3. Metrics指标监控：例如cpu、内存、硬盘、网络等机器指标，grpc的请求延迟、错误率等网络协议指标，用户数、访问数、订单数等业务指标，都可以涵盖在内
+3. OpenTelemetry的终极目标：实现Metrics、Tracing、Logging的融合及大一统，作为APM的数据采集终极解决方案。
+   1. Tracing：提供了一个请求从接收到处理完成整个生命周期的跟踪路径，一次请求通常过经过N个系统，因此也被称为分布式链路追踪
+   2. Metrics：例如cpu、请求延迟、用户访问数等Counter、Gauge、Histogram指标
+   3. Logging：传统的日志，提供精确的系统记录
+   4. 这三者的组合可以形成大一统的APM解决方案：
+      1. 基于Metrics告警发现异常
+      2. 通过Tracing定位到具体的系统和方法
+      3. 根据模块的日志最终定位到错误详情和根源
+      4. 调整Metrics等设置，更精确的告警/发现问题
 
 ### 1-1 opentelemetry的前世今生
+- 历史演进相关：https://github.com/open-telemetry/docs-cn/blob/main/OT.md
 
+---
+
+#### 一、前世：混沌时代（2010–2019）
+1. 源头：Google Dapper（2010）
+- Google 发表 **Dapper 论文**，首次公开大规模分布式追踪方案。
+- 奠定了 **Trace、Span、Annotation** 等核心概念。
+- 后来所有追踪系统（Zipkin、Jaeger、OTel）都源于此。
+
+#### 2. 早期工具百花齐放（2012–2015）
+- 2012：Twitter 开源 **Zipkin**（基于 Dapper）。
+- 2015：Uber 开源 **Jaeger**（更强、更现代）。
+- 问题：**每个工具格式都不一样，厂商锁定严重**。
+
+#### 3. 两大标准打架：OpenTracing vs OpenCensus（2016–2019）
+1）OpenTracing（2016，CNCF）
+- 主导：Uber、Lyft、CNCF。
+- 只做 **Trace（链路追踪）**。
+- 定位：**统一 API 规范**，不提供具体实现。
+- 支持：Zipkin、Jaeger、SkyWalking 等。
+
+2）OpenCensus（2018，Google）
+- 主导：Google（内部 Census 开源）。
+- 同时支持 **Trace + Metrics（指标）**。
+- 定位：**全功能 SDK**，自带采集、导出。
+- 微软、AWS 很快加入。
+
+3）行业分裂（2018–2019）
+- 开发者痛苦：
+  - 想用 Trace → 用 OpenTracing
+  - 想用 Metrics → 用 OpenCensus
+  - 两套 API、两套 SDK、两套埋点
+- 云厂商、开源社区**阵营对立**。
+
+---
+
+#### 二、今生：合并与统一（2019–2026）
+1. 历史性合并（2019-05-21）
+- CNCF 宣布：**OpenTracing + OpenCensus = OpenTelemetry**。
+- 口号：**一个标准、一套埋点、所有信号（Trace/Metrics/Logs）**。
+- 两大社区握手，**结束分裂**。
+
+2. 现在的 OpenTelemetry 是什么？
+   1. OpenTelemetry的核心工作目前主要集中在3个部分：
+      1. 规范的制定和协议的统一，规范包含数据传输、API的规范，协议的统一包含：HTTP W3C的标准支持及GRPC等框架的协议标准
+      2. 基于云原生标准，适配多语言接入SDK的实现和集成，用户可以使用SDK进行代码自动注入和手动埋点，同时对其他三方库（Log4j、LogBack等）进行集成支持；
+      3. 数据收集系统的实现，当前是基于OpenCensus Service的收集系统，包括Agent和Collector。
+   2. OpenTelemetry的自身定位很明确：数据采集和标准规范的统一，对于数据如何去使用、存储、展示、告警，官方是不涉及的，我们目前推荐使用Prometheus + Grafana做Metrics存储、展示，使用Jaeger做分布式跟踪的存储和展示
+      1. 如将openTelemetry作为数据源，导出接入jaeger查看，接入Prometheus查看
+      2. 标准技术栈：Metrics：Prometheus + Grafana
+         1. Trace：Jaeger
+         2. Logs：Loki / ElasticSearch
+
+### 1-2 OpenTelemetry快速体验
+
+- "go.opentelemetry.io/otel/exporters/jaeger" 这个exportes下，内置了很多厂商快速对接模块，因为它底层的协议是统一兼容的
+  - 如能快速导出对接到Jaeger中
+- 示例代码见`jieduan9-自研微服务框架-gmicro/telemetry/ch01/main.go`
+### 1-3 SetAttribute设置链路的属性
+
+- 示例代码依然见`jieduan9-自研微服务框架-gmicro/telemetry/ch01/main.go`
+- 全局和span级别的链路属性设置，span级别的span.AddEvent("this is an event")添加事件设置
+
+### 1-4 OpenTelemetry的系统架构
+
+- opentelemetry-collector 项目的插件化管理方式，使得定制化开发Receiver，Processor、Exporter 的成本很低，我们在做概念验证时，基本可以在一两个小时内开发并测试完毕一个组件
+- OpenTelemetry整体分为 三大核心模块
+  - 数据流单向流转：业务服务 → 应用OTel SDK模块 → Collector模块(Receiver → Processor → Exporter) → 观测后端模块
+  - 举例：SDK 做了什么？
+    - 生成 TraceID、SpanID
+    - 记录接口耗时、属性、事件
+    - SDK 统一编码成 OTLP 格式
+    - SDK 通过 Exporter 发送出去，发给本地 Collector
+```js
+1. 应用侧：OTel SDK 模块
+        ↓ 数据上报（OTLP 协议）
+2. 中转侧：OpenTelemetry Collector 模块
+        ↓ 数据转发
+3. 存储展示侧：观测后端模块
+```
+- `opentelemetry-collector`官方github项目即Collector模块架构如下图：
+  - 官方项目中只是自己定义的模块，3方云厂商集成社区扩展的插件都在`opentelemetry-collector-contrib`项目里维护
+    - 如`https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver`
+  - receiver模块，可以接收不同种协议，都是插件化，就是其他各种云厂商的数据可以直接接入到opentelemetry-collector中，然后由collector系统模块统一处理，最终也可以输出到不同厂商对应的展示平台中，如mysql，influxdb，elasticsearch，kafka等等
+![alt text](image-4.png)
+
+
+1. 头部采样：在 SDK 端（发之前就决定要不要这条 trace）
+2. 尾部采样tail_sampling：在 Collector 的 Processor 阶段
+
+### 1-5 函数中传递span的context
 
 ## 31周 系统监控核心
 
