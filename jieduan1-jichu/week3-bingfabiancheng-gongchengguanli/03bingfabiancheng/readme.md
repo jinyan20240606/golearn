@@ -110,7 +110,10 @@ p：逻辑处理器中间层
 ## 3-3 通过waitgroup等待协程执行
 
 
-wait group主要用于goroutine的执行等待，Add方法必须与Done方法配套成对使用
+- wait group主要用于goroutine的执行等待，Add方法必须与Done方法配套成对使用
+  - 你执行一次 wg.Add(1)，计数器 +1
+  - 你执行一次 wg.Done()，计数器 -1
+  - 当计数器 = 0 时，wg.Wait() 就会停止阻塞，继续往下走
 
 
 ## 3-4 通过mutex和atomic完成全局变量的原子操作

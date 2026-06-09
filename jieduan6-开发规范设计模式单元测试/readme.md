@@ -63,9 +63,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter,r http.Request){}
 ├── cmd          # 项目启动入口（main 函数所在），每个服务一个启动入口
 ├── configs      # 配置文件：yaml、toml、json
 ├── docs         # 文档：设计文档、接口文档
-├── internal     # 【全局私有包】整个项目能用，不是开源给外部用的，外部不能引用 import
+├── internal     # 【全局私有包】业务代码、私有逻辑，整个项目能用，不是开源给外部用的，外部不能引用 import，只有 internal 同级目录下 & 或同级目录下子目录 才能 import！--- 这是go语言编译器强制规则
 ├── init         # 系统初始化脚本：systemd 脚本
-├── pkg          # 全局公共库，公共的（外部可 import）（所有服务都能使用），工具、通用组件，希望开源 / 给别人用
+├── pkg          # 全局公共库，公共的，不包含业务代码，（外部可 import）（所有服务都能使用），工具、通用组件，希望开源 / 给别人用
 ├── scripts      # 运维脚本：启动、停止、部署、打包
 ├── test         # 测试文件：压力测试、集成测试
 ├── third_party  # 第三方依赖、私有库，不通过 go mod 管理的私有包
@@ -73,7 +73,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter,r http.Request){}
 ├── examples     # 示例代码
 └── go.mod        # Go Module 依赖管理
 ```
-
+1. 例如
+   1. 可以放 pkg（能 import）
+   2. pkg/logger （所有服务都要用）
+   3. pkg/validator （手机号校验通用）
+   4. pkg/pprof （性能分析通用）
+   5. pkg/middleware （中间件通用）
+   6. pkg/redis （redis 通用）
+   7. 不能放 pkg（只能 internal）
+      1. internal/user/service （用户服务业务）
+      2. internal/order/dao （订单数据库操作）
+      3. internal/user/biz （用户业务逻辑）
 #### 1-11 govet进行代码检测
 
 - go内部官方提供的静态代码分析工具是`go vet ./main.go` go vet 专门检查 编辑器 / 编译器 检查不出来 的错误

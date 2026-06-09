@@ -2,16 +2,18 @@ package restserver
 
 import (
 	"fmt"
+
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/locales/en"
 	"github.com/go-playground/locales/zh"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
 
-	en_translations "github.com/go-playground/validator/v10/translations/en"
-	zh_translations "github.com/go-playground/validator/v10/translations/zh"
 	"reflect"
 	"strings"
+
+	en_translations "github.com/go-playground/validator/v10/translations/en"
+	zh_translations "github.com/go-playground/validator/v10/translations/zh"
 )
 
 func (s *Server) initTrans(locale string) (err error) {
@@ -30,6 +32,7 @@ func (s *Server) initTrans(locale string) (err error) {
 		enT := en.New() //英文翻译器
 		//第一个参数是备用的语言环境，后面的参数是应该支持的语言环境
 		uni := ut.New(enT, zhT, enT)
+		// 将全局翻译器绑定在实例s上，供全局各个地方翻译使用
 		s.trans, ok = uni.GetTranslator(locale)
 		if !ok {
 			return fmt.Errorf("uni.GetTranslator(%s)", locale)

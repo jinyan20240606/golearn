@@ -18,6 +18,7 @@
 %v → 打印默认格式
 %+v → 打印详细结构 / 堆栈（pkg/errors 专用）
 fmt.Printf → 格式化输出，需要自己加 \n 换行
+%-6s = -是左对齐、固定 6 位宽度字符串
 
 ### 一、打印类（最常用）
 1. fmt.Print()
@@ -96,10 +97,21 @@ go
 var n int
 fmt.Scanf("年龄：%d", &n)
 // 只要你在终端按格式输入年龄：20，n变量就获得了20值
+#### 从指定变量作为输入
+
+```go
+// 1、从字符串 header 里，按照 "Bearer 空格 内容" 的格式，把后面的【内容】提取出来，放进 rawJWT 变量里。
+fmt.Sscanf(
+    header,      // 源字符串："Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "Bearer %s", // 格式：固定前缀 Bearer + 空格 + 任意字符串
+    &rawJWT      // 把后面任意字符串，放进 rawJWT 变量里
+)
+```
 
 ### 写入类
 
-1. fmt.Fprintf()：把「格式化后的字符串」，写入到「指定的地方」
+1. fmt.Fprintf()：把「格式化后的字符串」，写入到「指定的地方」1参
+   1. fmt.Fprintf(os.Stdout, "姓名：%s，年龄：%d\n", "张三", 20)
 2. 
 
 ### 四、错误处理常用

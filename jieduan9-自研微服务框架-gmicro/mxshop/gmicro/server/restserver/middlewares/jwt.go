@@ -2,8 +2,9 @@ package middlewares
 
 import (
 	"errors"
-	"github.com/dgrijalva/jwt-go"
 	"time"
+
+	"github.com/dgrijalva/jwt-go"
 )
 
 type CustomClaims struct {
@@ -26,7 +27,7 @@ var (
 
 func NewJWT(signKey string) *JWT {
 	return &JWT{
-		[]byte(signKey), //可以设置过期时间
+		[]byte(signKey), // 👈 密钥就在这里！ 密钥从外部参数初始化传进来，存在 JWT 结构体里，可以设置过期时间
 	}
 }
 

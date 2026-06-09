@@ -976,10 +976,148 @@ if options.discovery != nil {
    2. app/mxshop 是 HTTP服务层，其他同级目录是RPC服务层，server.http-port这个配置主要用于HTTPWeb服务层使用，后面讲
 ## 29周 基于gin封装api服务
 就一章：基于gin封装通用的restserver
+
+- 主要实现：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/restserver`
 ### 1-1 设计restserver的通用结构
 
+- 第一步就是定义入口文件和入口方法`NewServer`和返回主Server结构体：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/restserver/server.go`
+  - 实现目标就是把gin给它封装进来
+### 1-2 通过函数选项模式完成NewServer
+
+- 主要完成入口文件server.go 的`NewServer`方法
+  - `./options.go` 实现函数选项模式，和中间件的读取默认值设置
+
+### 1-3 完成restserver的start方法核心逻辑
+
+- 自定义日志打印格式
+- 先重点完成mobile的验证器
+  - 验证器额外实现见：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/restserver/validation/mobile.go`
+- 完成`"net/http/pprof" // Go 官方性能分析库`性能分析的路由
+  - `pprof`库，非常有用！是 Go 服务线上出问题的【终极排查神器】，没有之一。
+  - CPU 100%、内存暴涨、goroutine 泄漏、死锁、接口慢 ——全靠它定位。
+  - 如：直接看到哪一行代码吃 CPU！哪个函数、哪个方法、耗了多少 CPU 百分比。
+    - 哪一行代码在分配大量内存、没有释放！等等
+    - 具体使用单独查文档
+- 设置不信任代理服务器：`s.SetTrustedProxies(nil)`
+- 启动服务时要忽略这 3 种都叫 优雅关闭时的错误，它门算正常错误可以忽略
+  - Ctrl+C
+  - kill <pid>
+    - kill -9 的算强杀
+  - 代码主动 Shutdown()
+  - 它们全部返回：http.ErrServerClosed
+  - 你们代码里都会忽略这个错误，不打印错误日志，平滑退出。
+- 8. 什么是优雅退出：即最关键：server.Shutdown (ctx) 到底做什么？
+  - 温柔版关闭流程：
+    - 不再接受新连接
+    - 已经进来的请求继续跑完
+    - 跑完后再退出
+    - 如果 ctx是一个超时上下文， 超时（比如 5 秒），就强制关闭
+      - 5 秒内优雅关闭完 → 正常退出
+      - 5 秒还没关闭完 → 强制退出
+  - 对比暴力关闭：
+    - server.Close() → 直接断开所有请求，用户报错
+
+### 1-4 封装验证翻译器
+- 见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/restserver/translator.go`
+- 在`jieduan9-自研微服务框架-gmicro/mxshop/app/pkg/translator/gin/translator.go`在pkg目录下存放一些公共代码包文件与业务无关的，抽象一些翻译器的方法
+  - pkg公共代码，业务无关的，可以背外部import，intercal目录：私有代码，外部不能import，放业务逻辑，服务内部代码
+- 接着实现Stop方法
+  - Gin 默认的 s.Run () 不支持优雅关闭！，只有自己创建 http.Server，才能用 Shutdown () 实现优雅退出！
+  - 所有启动gin服务必须得用`s.server.ListenAndServe()`
+- 目前已基本实现完成，下节集成到jieduan9-自研微服务框架-gmicro/mxshop/gmicro/app的启动链路中
+### 1-5 gemicro在app中分别启动rest和rpc服务
+- 目前已基本实现完成，现在集成到jieduan9-自研微服务框架-gmicro/mxshop/gmicro/app的启动链路中
+  - 见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/app/options.go`添加restserver配置参数
+  - 有考虑的点需要注意：不能简单的直接两行语句启动2个server，应该同时成功同时失败取消
+    - 下节课介绍用errorgroup实现
+### 1-6 errorgroup解决一组task启动的问题
+- golang自带的："golang.org/x/sync/errgroup"
+  - 同时跑一组 goroutine，并统一收集错误、联动取消。它可以看成是 sync.WaitGroup 的增强版
+  - errorgroup的示例demo见：`jieduan9-自研微服务框架-gmicro/eg`
+### 1-7 通过errgroup完善rpcserver和rest/server
+- `jieduan9-自研微服务框架-gmicro/mxshop/gmicro/app/app.go`中使用errorgroup创建2个服务的同时启动
+- 其中可以搭配waitgroup 实现
+  - errgroup (eg.Go / eg.Wait)
+    - 作用：等所有服务【跑完、关掉、退出】，用来等协程结束，只要有一个服务挂了，全部取消
+    - 最后主 goroutine 调用 eg.Wait() 一直阻塞到所有服务都停了
+  - sync.WaitGroup (wg.Add/Done/Wait)
+    - 作用：等所有服务【已经真正开始运行】
+    - 用来等协程真正被调度、启动了
+    - 确保服务已经调用 Start()
+    - 防止主流程跑得太快，导致：→ 服务还没启动，就去执行注册服务、打印启动成功等逻辑
+### 1-8 restserver启动并测试
+
+- `jieduan9-自研微服务框架-gmicro/mxshop/app/mxshop`这个目录专门与其他微服务的目录不一样，这个目录专门用来测试restserver的代码，来调用restserver服务的。
+  - 用gemicro自己实现的框架启动的resthttp服务
+
+- 建立restserver的客户端代码,详见：`jieduan9-自研微服务框架-gmicro/mxshop/app/mxshop/admin/app.go`
+- 然后创建`jieduan9-自研微服务框架-gmicro/mxshop/configs/admin/admin.yaml`配置文件
+- 创建`jieduan9-自研微服务框架-gmicro/mxshop/cmd/admin/admin.go`进行cmd入口，`go run ./admin.go -c 上面的配置文件` 测试运行
+  - 启动后，也可以通过postman进行接口测试我们这个用gemicro框架启动的resthttp服务
+
+### 1-9 优雅退出如何通知到rpc-server和rest-server
+- jieduan9-自研微服务框架-gmicro/mxshop/gmicro/app/app.go
+```go
+// 主要是将上下文的cancel回调，保存结构体对象全局上， 后续服务stop时，可以调用cancel()来优雅取消所有服务
+ctx, cancel := context.WithCancel(context.Background())
+a.cancel = cancel
+eg, ctx := errgroup.WithContext(ctx)
+
+// Stop中：
+a.cancel()
+```
+### 1-10 基于restserver封装middleware
+
+- `jieduan9-自研微服务框架-gmicro/mxshop/app/mxshop/admin/http.go`中传入中间件配置参数的
+### 1-11 basic认证，cache认证和jwt认证的需求
+
+我们把这些认证过程也加到中间件中，我们先讲下其他没讲过的常用认证方式：
+
+- 之前的jwt认证是无状态的，特别适合分布式，但是对于一些特殊需求也有缺点：如黑名单的功能，主动失效，单点登录功能，jwt很难满足，这种场景适合用jwt搭配cache缓存认证（如redis实现）的有状态认证
+  - 具体原理见`1-13的cache源码解析`
+- HTTP Basic认证：https://juejin.cn/post/6844903586405564430
+  - https://juejin.cn/post/6844904089718013965
+  - 由于只是base64编码，传输不安全，一般用于公司内部系统，简单web服务认证
+
+### 1-12 如何集成basic认证，cache认证和jwt认证服务
+
+- `jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/restserver/middlewares/auth.go`
+  - 先定义认证的统一接口抽象和结构体抽象，面向接口编程
+  - 我们只要让用户自己去实现具体基于jwt或cache的AuthStrategy接口，注册进我们维护的实例化结构体即可解耦抽象
+  - `middlewares/auth`这个目录就是面向接口实现的各种认证逻辑，我们看源码了解逻辑
+
+### 1-13 basic认证，cache认证和jwt认证源码解析
+
+1. 原始jwt认证方式流程
+      ```yml
+      用户登录
+          ↓
+      账号密码正确
+          ↓
+      生成 JWT（Header + Payload + 签名）
+          ↓
+      返回给前端
+          ↓
+      前端每次请求带上 JWT
+          ↓
+      服务端自己存储的密钥，重新对Header + Payload 进行签名验证：
+        1. 签名是否正确
+        2. 是否过期：取出 Payload 里的 exp 过期时间：当前时间 < 过期时间 → 有效，当前时间 > 过期时间 → 过期，拒绝
+          ↓
+      验证通过 → 允许访问接口
+      ```
+2. cache认证：jwt+缓存的方式
+3. basic大致原理
+4. 纯jwt方式：借用`github.com/appleboy/gin-jwt/v2"`可以完成大部分工作
+5. auto方式：兼容判断当前是jwt还是basic
 
 ## 30周 可观测的终极解决方案
+
+就一章：opentelemetry实现链路追踪
+
+
+### 1-1 opentelemetry的前世今生
+
 
 ## 31周 系统监控核心
 

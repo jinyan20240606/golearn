@@ -1,12 +1,13 @@
 package admin
 
 import (
-	"github.com/hashicorp/consul/api"
 	"mxshop/app/pkg/options"
 	"mxshop/app/user/srv/config"
 	gapp "mxshop/gmicro/app"
 	"mxshop/pkg/app"
 	"mxshop/pkg/log"
+
+	"github.com/hashicorp/consul/api"
 
 	"mxshop/gmicro/registry"
 	"mxshop/gmicro/registry/consul"
@@ -42,7 +43,7 @@ func NewUserApp(cfg *config.Config) (*gapp.App, error) {
 	//服务注册
 	register := NewRegistrar(cfg.Registry)
 
-	//生成rpc服务
+	//生成rest服务
 	rpcServer, err := NewUserHTTPServer(cfg)
 	if err != nil {
 		return nil, err

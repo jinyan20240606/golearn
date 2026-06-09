@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	// 同时跑一组 goroutine，并统一收集错误、联动取消。它可以看成是 sync.WaitGroup 的增强版
+	// golang自带的：同时跑一组 goroutine，并统一收集错误、联动取消。它可以看成是 sync.WaitGroup 的增强版
 	"golang.org/x/sync/errgroup"
 
 	"mxshop/gmicro/registry"
@@ -81,38 +81,28 @@ func (a *App) Run() error {
 	a.instance = instance
 	a.lk.Unlock()
 
-	//if a.opts.rpcServer != nil {
-	//	// 启动rpc服务， 如果我想要给这个rpc服务设置port 我们想要给这个rpc服务register我们自定义的interceptor
-	//	a.opts.rpcServer.Serve()
-	//}
-
-	//重点， 写的很简单， http服务要启动
-	//if a.opts.rpcServer != nil {
-	//	err := a.opts.rpcServer.Start()
-	//	if err != nil {
-	//		return err
-	//	}
-	//}
-
-	//现在启动了两个server，一个是restserver，一个是rpcserver
+	//现在启动了两个server，一个是restserver，一个是rpcserver，有以下问题需要考虑：
 	/*
+		有一些问题需要注意：
 		这两个server是否必须同时启动成功？
-		如果有一个启动失败，那么我们就要停止另外一个server
-		如果启动了多个， 如果其中一个启动失败，其他的应该被取消
-			如果剩余的server的状态：
+		1. 如果有一个启动失败，那么我们就要停止另外一个server
+		2. 如果启动了多个， 如果其中一个启动失败，其他的应该被取消
+			具体地如果其他的server的状态：
 				1. 还没有开始调用start
-					stop
+					也直接stop也可以
 				2. start进行中
 					调用进行中的cancel
 				3. start已经完成
 					调用stop
-		如果我们的服务启动了然后这个时候用户立马进行了访问
+		3. 如果我们的服务启动了然后这个时候用户立马进行了访问
 	*/
 
 	var servers []gs.Server
+	// 启动rest服务
 	if a.opts.restServer != nil {
 		servers = append(servers, a.opts.restServer)
 	}
+	// 启动rpc服务
 	if a.opts.rpcServer != nil {
 		servers = append(servers, a.opts.rpcServer)
 	}
@@ -123,32 +113,37 @@ func (a *App) Run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
 	eg, ctx := errgroup.WithContext(ctx)
+	// 2. 等待组：用来确保【服务启动协程】真的跑起来了
 	wg := sync.WaitGroup{}
 	// 启动服务必须放在协程里，因为他是异步，否则会卡住主程序
+	// 3. 遍历所有要启动的服务（可能是 http + grpc 同时启动）
 	for _, srv := range servers {
-		srv := srv
+		srv := srv // 局部变量复制，避免循环变量坑
 
 		// 每个 server 都对应一个“停止协程”：
 		// 一旦应用 ctx 被取消，就调用 server 的 Stop 完成优雅停机。
 		eg.Go(func() error {
-			<-ctx.Done()
+			<-ctx.Done() // 阻塞在这里！等到 ctx 被取消（Ctrl+C/服务关闭）才往下走
+			// 给【优雅关闭】设置一个最长等待时间 **（比如 5 秒），时间一到，不管有没有执行完，强制关闭
 			sctx, cancel := context.WithTimeout(context.Background(), a.opts.stopTimeout)
+			// 不管停没停成功，最后都必须清理资源！
 			defer cancel()
-			return srv.Stop(sctx)
+			return srv.Stop(sctx) // 调用服务的 Stop：优雅关闭
 		})
 
-		// 启动 server。
-		// 这里配合 WaitGroup 的目的，是确保所有 Start goroutine 都已真正被调度出去，
-		// 然后再继续执行后续的服务注册逻辑。
-		wg.Add(1)
+		// ====================== 协程 2：启动服务 ======================
+		// 这个协程【负责启动服务】
+		// 必须开协程，因为 Start() 是阻塞的，会卡住主程序
+		wg.Add(1) // 增加一个等待计数
 		eg.Go(func() error {
-			wg.Done()
+			wg.Done() // 告诉主程序：我已经启动啦！
 			log.Info("start rest server")
-			return srv.Start(ctx)
+			return srv.Start(ctx) // 启动服务（阻塞运行，直到关闭）
 		})
 	}
 
-	// 等待所有启动协程进入运行状态后，再进行注册。
+	// 等待所有启动协程进入运行状态后，再进行注册。----- 注意这个与eg.Wait()的含义是相反的
+	// 用来确保服务真的启动了，防止主流程跑得太快，导致 “服务还没启动就去注册服务” 的 BUG
 	wg.Wait()
 
 	// 所有 server 启动流程已发起后，将当前实例注册到注册中心。
