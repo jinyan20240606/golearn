@@ -2,10 +2,11 @@ package serverinterceptors
 
 import (
 	"context"
-	"google.golang.org/grpc/status"
 	"mxshop/gmicro/core/metric"
 	"strconv"
 	"time"
+
+	"google.golang.org/grpc/status"
 
 	"google.golang.org/grpc"
 )
@@ -24,7 +25,7 @@ var (
 		Name:      "mxshop_duration_ms",
 		Help:      "rpc server requests duration(ms).",
 		Labels:    []string{"method"},
-		Buckets:   []float64{5, 10, 25, 50, 100, 250, 500, 1000},
+		Buckets:   []float64{5, 10, 25, 50, 100, 250, 500, 1000}, // 耗时桶
 	})
 
 	metricServerReqCodeTotal = metric.NewCounterVec(&metric.CounterVecOpts{
@@ -36,6 +37,9 @@ var (
 	})
 )
 
+// 给所有 gRPC 接口自动统计 2 个核心监控指标
+// 接口耗时 Histogram（ms，可算 P99/P95）
+// 接口状态码 Counter（200/400/500/13 等）
 func UnaryPrometheusInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler) (resp interface{}, err error) {
 

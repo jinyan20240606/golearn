@@ -6,6 +6,111 @@
   - 如app下的user用户微服务，服务端使用mvc模式，最终还是会注册到grpc-proto构建提供的`.RegisterUserServer`中
     - 客户端还是使用grpc-proto提供的`NewUserClient`去链接服务端的controlle层的方法
 
+- [阶段9-自研微服务框架-gmicro](#阶段9-自研微服务框架-gmicro)
+  - [26周 三层代码结构](#26周-三层代码结构)
+    - [1-1 导入common和app包](#1-1-导入common和app包)
+    - [1-2 通过app启动配置文件映射和flag映射](#1-2-通过app启动配置文件映射和flag映射)
+    - [1-3 重构app启动项目](#1-3-重构app启动项目)
+    - [1-4 app启动的原理](#1-4-app启动的原理)
+    - [1-5 已有代码存在哪些耦合](#1-5-已有代码存在哪些耦合)
+    - [1-6 三层代码结构降低代码耦合](#1-6-三层代码结构降低代码耦合)
+    - [1-7 service层和data层的解耦](#1-7-service层和data层的解耦)
+    - [1-8 DO、DTO、VO这些概念是什么](#1-8-dodtovo这些概念是什么)
+      - [一个经典业务场景：创建订单时整条链怎么流转](#一个经典业务场景创建订单时整条链怎么流转)
+        - [1、前端入参 + 请求DTO（不变，原始入参）](#1前端入参--请求dto不变原始入参)
+        - [2、DTO → 拆分4组BO（Service查数据、算金额、补全业务字段，无OrderID）](#2dto--拆分4组boservice查数据算金额补全业务字段无orderid)
+        - [3、4BO → 5DO（一一映射5张数据库表，入库后补OrderID外键）](#34bo--5do一一映射5张数据库表入库后补orderid外键)
+        - [对应数据表](#对应数据表)
+        - [4、入库执行逻辑（事务内分步）](#4入库执行逻辑事务内分步)
+        - [5、出库返回：RespDTO → VO](#5出库返回respdto--vo)
+      - [总结：你最该记住的不是定义，而是“职责变化”](#总结你最该记住的不是定义而是职责变化)
+    - [1-9 service层的代码如何做到可测试性？](#1-9-service层的代码如何做到可测试性)
+    - [1-10 controller层如何减少对service层的依赖？](#1-10-controller层如何减少对service层的依赖)
+    - [1-11 使用copier简化do和dto之间的拷贝转换](#1-11-使用copier简化do和dto之间的拷贝转换)
+      - [原理和性能问题](#原理和性能问题)
+  - [27周 grpc服务封装更方便的rpc服务](#27周-grpc服务封装更方便的rpc服务)
+    - [1章 通用微服务框架需求](#1章-通用微服务框架需求)
+      - [1-1 为什么需要自己开发微服务框架？](#1-1-为什么需要自己开发微服务框架)
+      - [1-2 微服务框架应该具备的功能](#1-2-微服务框架应该具备的功能)
+      - [1-3 通过函数选项模式启动app](#1-3-通过函数选项模式启动app)
+      - [1-4 实现服务注册的抽象](#1-4-实现服务注册的抽象)
+      - [1-5 服务注册的监听实现原理](#1-5-服务注册的监听实现原理)
+      - [1-6 如何封装rpc和http服务？](#1-6-如何封装rpc和http服务)
+    - [2章 开发通用的rpc服务](#2章-开发通用的rpc服务)
+      - [2-1 rpc的server数据模型设计](#2-1-rpc的server数据模型设计)
+      - [2-2 rpc服务启动过程中的拦截器和rpc接口反射等功能](#2-2-rpc服务启动过程中的拦截器和rpc接口反射等功能)
+      - [2-3\&4缺失](#2-34缺失)
+      - [2-5 service的timeout的拦截器实现原理](#2-5-service的timeout的拦截器实现原理)
+      - [2-6 app中如何启动gmicro的rpc服务](#2-6-app中如何启动gmicro的rpc服务)
+  - [28周 深入grpc的服务注册与负载均衡原理](#28周-深入grpc的服务注册与负载均衡原理)
+    - [1-1 配置-服务注册配置](#1-1-配置-服务注册配置)
+    - [1-2 kratos对consul服务注册的封装](#1-2-kratos对consul服务注册的封装)
+    - [1-3 将服务注册到consul中](#1-3-将服务注册到consul中)
+    - [1-4 客户端封装的数据结构设计](#1-4-客户端封装的数据结构设计)
+    - [1-5 封装dial方法进行客户端生成](#1-5-封装dial方法进行客户端生成)
+    - [1-6 封装client端的imeout拦截器](#1-6-封装client端的imeout拦截器)
+    - [1-7 grpc的服务发现的resolver接口](#1-7-grpc的服务发现的resolver接口)
+      - [grpc服务发现相关原理概念](#grpc服务发现相关原理概念)
+    - [1-8 自定义实现directBuilder实现服务发现器](#1-8-自定义实现directbuilder实现服务发现器)
+    - [1-9 grpc的服务发现和负载均衡的原理](#1-9-grpc的服务发现和负载均衡的原理)
+    - [1-10 通过WithResolvers显示指定resolver](#1-10-通过withresolvers显示指定resolver)
+    - [1-11 通过观察者模式实现服务发现](#1-11-通过观察者模式实现服务发现)
+      - [discovery 与 consul 的关系](#discovery-与-consul-的关系)
+    - [1-12 测试consul的服务发现功能](#1-12-测试consul的服务发现功能)
+    - [1-13 grpc的负载均衡架构原理](#1-13-grpc的负载均衡架构原理)
+    - [1-14 grpc负载均衡源码分析](#1-14-grpc负载均衡源码分析)
+    - [1-15 pickfirst和roundrobin源码分析](#1-15-pickfirst和roundrobin源码分析)
+    - [1-16 kratos负载均衡源码分析](#1-16-kratos负载均衡源码分析)
+      - [零、先看各个文件之间的关系](#零先看各个文件之间的关系)
+      - [五、这套实现最重要的设计价值](#五这套实现最重要的设计价值)
+    - [1-17 负载均衡使用测试](#1-17-负载均衡使用测试)
+  - [29周 基于gin封装api服务](#29周-基于gin封装api服务)
+    - [1-1 设计restserver的通用结构](#1-1-设计restserver的通用结构)
+    - [1-2 通过函数选项模式完成NewServer](#1-2-通过函数选项模式完成newserver)
+    - [1-3 完成restserver的start方法核心逻辑](#1-3-完成restserver的start方法核心逻辑)
+    - [1-4 封装验证翻译器](#1-4-封装验证翻译器)
+    - [1-5 gemicro在app中分别启动rest和rpc服务](#1-5-gemicro在app中分别启动rest和rpc服务)
+    - [1-6 errorgroup解决一组task启动的问题](#1-6-errorgroup解决一组task启动的问题)
+    - [1-7 通过errgroup完善rpcserver和rest/server](#1-7-通过errgroup完善rpcserver和restserver)
+    - [1-8 restserver启动并测试](#1-8-restserver启动并测试)
+    - [1-9 优雅退出如何通知到rpc-server和rest-server](#1-9-优雅退出如何通知到rpc-server和rest-server)
+    - [1-10 基于restserver封装middleware](#1-10-基于restserver封装middleware)
+    - [1-11 basic认证，cache认证和jwt认证的需求](#1-11-basic认证cache认证和jwt认证的需求)
+    - [1-12 如何集成basic认证，cache认证和jwt认证服务](#1-12-如何集成basic认证cache认证和jwt认证服务)
+    - [1-13 basic认证，cache认证和jwt认证源码解析](#1-13-basic认证cache认证和jwt认证源码解析)
+  - [30周 可观测的终极解决方案](#30周-可观测的终极解决方案)
+    - [1-1 opentelemetry的前世今生](#1-1-opentelemetry的前世今生)
+      - [一、前世：混沌时代（2010–2019）](#一前世混沌时代20102019)
+      - [2. 早期工具百花齐放（2012–2015）](#2-早期工具百花齐放20122015)
+      - [3. 两大标准打架：OpenTracing vs OpenCensus（2016–2019）](#3-两大标准打架opentracing-vs-opencensus20162019)
+      - [二、今生：合并与统一（2019–2026）](#二今生合并与统一20192026)
+    - [1-2 OpenTelemetry快速体验](#1-2-opentelemetry快速体验)
+      - [代码库注意](#代码库注意)
+    - [1-3 SetAttribute设置链路的属性](#1-3-setattribute设置链路的属性)
+    - [1-4 OpenTelemetry的系统架构](#1-4-opentelemetry的系统架构)
+    - [1-5 函数中传递span的context](#1-5-函数中传递span的context)
+    - [1-6 OpenTelemetry通过http完成span的传输](#1-6-opentelemetry通过http完成span的传输)
+      - [TextMapPropagator传播器 到底是干嘛的](#textmappropagator传播器-到底是干嘛的)
+    - [1-7 自定义Inject和extract源码](#1-7-自定义inject和extract源码)
+    - [1-8 grpc集成OpenTelemetry](#1-8-grpc集成opentelemetry)
+    - [1-9 otelgrpc源码解读](#1-9-otelgrpc源码解读)
+    - [1-10 设计 opentelemetry的options](#1-10-设计-opentelemetry的options)
+    - [1-11 gemicro集成opentelemetry](#1-11-gemicro集成opentelemetry)
+    - [1-12 log和opentelemetry集成体验](#1-12-log和opentelemetry集成体验)
+    - [1-13 opentelemetry集成log的源码解读](#1-13-opentelemetry集成log的源码解读)
+    - [1-14 gorm集成opentelemetry](#1-14-gorm集成opentelemetry)
+    - [1-15 gorm集成opentelemetry的源码解读](#1-15-gorm集成opentelemetry的源码解读)
+    - [1-16 gin集成opentelemetry](#1-16-gin集成opentelemetry)
+    - [1-17 go-redis集成opentelemetry](#1-17-go-redis集成opentelemetry)
+  - [31周 系统监控核心](#31周-系统监控核心)
+    - [1-1 监控有哪些指标](#1-1-监控有哪些指标)
+      - [一、业务监控（上层视角，面向管理层 / 运营）](#一业务监控上层视角面向管理层--运营)
+      - [三、日志监控：主流ELK系统或者loki](#三日志监控主流elk系统或者loki)
+      - [四、网络监控](#四网络监控)
+      - [五、程序监控](#五程序监控)
+      - [总结](#总结)
+
+
 ## 26周 三层代码结构
 
 - 课件演示代码目录见`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv`
@@ -1117,10 +1222,10 @@ a.cancel()
 
 1. 官方文档：https://opentelemetry.io/zh/docs/concepts/observability-primer/ 
    1. https://github.com/open-telemetry/docs-cn/blob/main/OT.md
-2. 我们的在实际生产环境中的监控也叫APM，主要包括3个大点：1-日志，2-tracing，3-metrics指标。
-   1. APM的两种监控子类Logging日志：目前常见的日志收集平台有EFK、Fluentd.
+2. 我们的在实际生产环境中的监控也叫APM，主要包括3个子类：1-日志，2-tracing，3-metrics指标。
+   1. Logging日志：目前常见的日志收集平台有EFK、Fluentd.
    2. Distributed Tracing(分布式链路追踪)是APM(Application Performance Monitoring)的子集。
-   3. Metrics指标监控：例如cpu、内存、硬盘、网络等机器指标，grpc的请求延迟、错误率等网络协议指标，用户数、访问数、订单数等业务指标，都可以涵盖在内
+   3. Metrics指标监控：例如cpu、内存、硬盘、网络等机器指标，grpc的请求延迟、错误率等网络协议指标，用户数、访问数、订单数等业务指标，都可以涵盖在内，常用prometheus-grafana
 3. OpenTelemetry的终极目标：实现Metrics、Tracing、Logging的融合及大一统，作为APM的数据采集终极解决方案。
    1. Tracing：提供了一个请求从接收到处理完成整个生命周期的跟踪路径，一次请求通常过经过N个系统，因此也被称为分布式链路追踪
    2. Metrics：例如cpu、请求延迟、用户访问数等Counter、Gauge、Histogram指标
@@ -1327,4 +1432,290 @@ db.Callback().Query().After("gorm:after_query").Register("otel:after", func(tx *
 - go-redis/redis下面extra中有redisotel官方也支持快速集成了
 - 示例代码见：`jieduan9-自研微服务框架-gmicro/redis/main.go`
 ## 31周 系统监控核心
+就一章 监控系统-prometheus、grafana
+- 对应APM的metrics子类：metrics
+### 1-1 监控有哪些指标
 
+#### 一、业务监控（上层视角，面向管理层 / 运营）
+整体定位：聚焦业务结果、用户行为、营收转化，用于运营分析、经营决策、大盘看板，是领导层重点关注内容。
+1. 参与角色
+需求方：老板、运营人员
+关注点：业务体量、用户活跃度、营收情况、功能可用性、转化效果。
+开发 & 维护方：大数据团队（是职能团队，围绕数据采集、加工、存储、计算、应用开展工作，数仓是其最核心的基建。）
+工作：搭建指标体系、数据同步、指标计算、报表 / 大盘产出。
+1. 数据来源
+主业务库：直接读取业务核心数据
+同步库：业务数据定时同步至数仓 / 中间库，避免查询压力影响线上主库
+宽表：大数据层整合多维度数据生成大宽表，用于快速聚合、统计分析
+1. 核心监控指标分类 & 说明
+（1）流量与访问类
+QPS：每秒请求数，衡量接口整体访问压力与流量走势
+DAU（日活跃用户）：每日活跃用户总数，核心用户体量指标
+HTTP 状态码：2xx/3xx/4xx/5xx 分布，判断接口访问正常率、报错占比
+（2）核心业务接口的监控
+覆盖产品核心功能，监控可用性、调用量、异常：
+登录、注册、聊天、文件上传、留言、搜索、投词
+（3）转化 & 营收类（核心经营指标）
+产品转化率：各环节流转比例（例：浏览→注册、注册→充值、访客→付费用户）
+充值额度：累计充值金额、日 / 周 / 月充值流水、单笔充值分布、充值用户数
+1. 补充特点
+数据偏聚合统计，一般按分钟 / 小时 / 天维度汇总，不关注单条请求细节；
+数据链路：业务服务 → 数据同步 → 数仓宽表 → 指标计算 → 业务大盘 / 报表；
+异常关注点：DAU 骤降、充值额下滑、核心接口大量报错、转化率异常波动。
+
+#### 二、系统监控（下层视角，面向开发）
+一、角色分工
+需求方：运维人员
+核心诉求：保障服务器、集群、中间件稳定运行，提前发现资源瓶颈、连接异常、服务宕机，及时告警处理故障。
+开发 & 维护方：运维团队
+负责监控组件部署、指标采集、告警规则配置、大盘维护、故障处置。
+二、核心监控对象 & 指标
+（一）操作系统层面（主机 / 容器基础资源）
+属于底层硬件 & 系统资源监控，线上环境必配：
+CPU：整体使用率、单核使用率、负载（1/5/15 分钟）、上下文切换
+内存：物理内存使用率、空闲内存、缓存 / 缓冲区、Swap 占用
+磁盘：磁盘使用率、剩余空间、inode 使用率、磁盘读写 IO、IO 等待耗时
+网络 / TCP
+网络入 / 出流量、带宽占用、丢包率
+TCP 连接数（重点：上万长连接场景），区分 ESTABLISHED/TIME_WAIT/LISTEN 等状态
+（二）中间件组件监控
+覆盖业务依赖的核心中间件，除基础资源外，补充组件专属指标：
+1. MySQL
+基础：进程状态、CPU / 内存 / 磁盘占用
+业务指标：QPS、TPS、连接数、慢查询数量、锁等待、主从延迟、缓存命中率
+2. Redis
+基础：进程资源、端口监听状态
+业务指标：内存使用率、Key 总量、连接数、命令 QPS、缓存命中 / 未命中、持久化状态
+3. Kafka
+基础：集群节点资源、进程状态
+业务指标：分区状态、消息生产 / 消费速率、队列堆积量、消费者在线数、副本同步状态
+三、技术实现（对应前面 Prometheus+Grafana）
+采集：通过各类 exporter 采集指标（node-exporter 采集主机、各中间件专属 exporter）
+存储计算：Prometheus 统一存储时序指标、配置告警规则
+可视化：Grafana 制作系统监控大盘，直观查看资源与组件状态
+#### 三、日志监控：主流ELK系统或者loki
+
+需求方：运维，开发
+开发方：开发
+
+**一、业务日志**：
+由业务应用代码主动打印，记录业务运行、请求流程、自定义埋点，面向研发、运维、业务分析。
+1. 两类场景与流转
+（1）大数据场景日志
+格式要求：预定义标准化格式（固定字段、JSON 为主），字段统一（时间、服务名、链路 ID、用户 ID、业务单号、日志级别、内容等）。
+目的：适配大数据分析、数仓、报表、用户行为分析、运营统计。
+流转：应用输出标准化日志 → 采集组件（Filebeat/Fluentd）→ 消息队列（Kafka）→ 大数据计算引擎（Flink/Spark）→ 数仓 / 可视化平台。
+（2）常规运维日志（ELK 体系）
+输出位置：
+物理机 / 虚拟机：本地日志文件
+K8s 容器：标准控制台（stdout/stderr）
+流转：容器控制台 / 本地文件 → 采集器（Filebeat/Fluent Bit）→ Elasticsearch 存储 → Kibana 检索、查看、可视化。
+2. 常见内容
+接口入参 / 出参、请求链路（TraceID/SpanID，可联动链路追踪）
+业务流程节点、操作记录、状态变更
+自定义报错、异常堆栈、第三方调用详情
+权限操作、敏感行为、操作审计日志
+3. 特点
+格式可自定义，生产环境强制规范格式，方便检索解析
+量大、全量存储，用于故障排查、问题复盘、业务审计
+可与 Trace、Metrics 联动，实现「指标告警 → 查链路 → 搜日志」全链路排障
+
+
+**二、系统日志**：
+
+由操作系统、容器、中间件、基础设施自动生成，和业务代码无关，聚焦底层软硬件运行状态。
+1. 分类 & 来源
+（1）主机系统日志（Linux 为主）
+系统内核日志：/var/log/messages、/var/log/kern.log，记录内核异常、硬件报错、OOM、驱动问题。
+认证登录日志：/var/log/secure、/var/log/auth.log，记录账号登录、权限操作、暴力破解。
+系统服务日志：系统自带服务（crontab、sshd、network 等）启停、运行报错。
+（2）容器 / K8s 系统日志
+容器运行时日志：Docker/containerd 日志，记录容器启停、资源限制、运行异常。
+K8s 组件日志：kube-apiserver、kube-controller-manager、kube-scheduler、kubelet 等核心组件日志，排查集群故障。
+集群事件：Pod 调度、启停、驱逐、镜像拉取失败、资源不足等事件日志。
+（3）中间件系统日志
+数据库、Redis、MQ、Nginx、网关等中间件自身运行日志：启动日志、连接日志、报错、慢日志、集群同步日志。
+2. 流转方式
+传统服务器：读取系统日志文件 → Filebeat → ELK
+K8s 环境：节点日志 / 容器运行时日志 → 节点级采集器 → ELK / 专用日志平台
+3. 特点
+格式由系统 / 组件原生定义，一般不手动修改
+偏向底层故障：宕机、网络异常、权限问题、集群故障、资源瓶颈
+多用于集群运维、基础设施排障、安全审计
+
+
+#### 四、网络监控
+   1. 机房管理
+   2. 开发方:服务器管理
+   3. IDC 交换机、路由器、防火墙、负载均衡、服务器、机柜、电源、UPS、空调、网络设备、机房环境监控.
+   4. 网络:内部网络(物理内网，虚拟内网(VPN))监控
+#### 五、程序监控
+   1. 需求方:开发
+   2. 开发方:开发
+   3. 比如产生了 500 ErrUserNotFouno
+   4. 一般要运维和开发人员配合，开发人员在程序中提供监控接口，运维人员通过接口获取监控数据
+
+#### 总结
+一般实际开发中，我们开发人员注意负责重点是程序监控
+
+### 1-2 prometheus、grafana整体架构
+
+- prometheus中文文档：https://prometheus.ac.cn/docs/introduction/overview/
+- 这块对运维是很重要的，我们开发来说一般会用知道大概架构即可
+
+1. 大多数 Prometheus 组件都是用 Go  编写的，这使得它们易于构建和部署为静态二进制文件
+2. 主要了解下大概的架构：https://prometheus.ac.cn/docs/introduction/overview/#architecture
+   1. 核心架构是Prometheus Server，里面3层
+      1. Retrieval：主要负责数据从各种对接方获取数据源
+         1. 如node-exporter采集器，k8s服务发现的采集器
+      2. TSDB：就是内部的时序数据库，会存在HDD/SSD节点上
+      3. HttPserver：暴露HTTP接口，供页面平台去展示数据
+         1. grafana：是一个独立的监控可视化平台，也可以监控ES，一般用它来监控普罗米修斯
+   2. 普罗米修斯的Retrieval层一般都是主动去客户机上的exporter或PushGateway获取数据，然后存储起来，然后通过HTTP接口提供数据给Grafana去拉的。
+3. 思考与opentelemetry的搭配结合
+   1. 用 OTel SDK/Receiver 替代 node-exporter，直接采集系统 metrics
+   2. 然后 OTel Collector 把 metrics 发给 Prometheus
+
+### 1-3 安装prometheus和node-exporter
+
+- 下载镜像（正确命令）
+  - sudo docker pull prom/node-exporter
+  - sudo docker pull prom/prometheus
+  - sudo docker pull grafana/grafana
+  ```js
+  // 启动node-exporter,默认端口：9100
+  // 只要启动这个 node-exporter，它就会自动采集【当前机器 / 当前电脑】的所有系统指标：CPU、内存、磁盘、网络、TCP 连接… 全部自动采集，等待普罗米修斯去拉
+  sudo docker run -d \
+    --name node-exporter \
+    --net="host" \ // 让容器直接使用宿主机网络，能看到本机所有网络信息。
+    --pid="host" \ // 让容器看到宿主机的所有进程，能统计 CPU、内存
+    -v "/:/host:ro,rslave" \
+    prom/node-exporter \
+    --path.rootfs=/host
+
+
+  // 启动 Prometheus（备用）
+  sudo docker run -d \
+    --name prometheus \
+    -p 9090:9090 \
+    -v /root/prometheus.yml:/etc/prometheus/prometheus.yml \
+    prom/prometheus
+  ```
+- /root/prometheus.yml 配置问价
+```yaml
+global:
+  scrape_interval: 15s    # 每15秒采集一次指标
+  evaluation_interval: 15s
+
+scrape_configs:
+  # 监控 node-exporter（服务器CPU、内存、磁盘、网络）
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["192.168.xxx.xxx:9100"]  # 改成你自己的服务器IP
+
+  # 监控 prometheus 自己
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+```
+### 1-4 promql基本语法
+
+不需要花过多精力记忆，用的时候再看就行
+1. 你启动的 prom/node-exporter 容器，会自动采集服务器指标，并且暴露固定名字
+   1. http://IP:9100/metrics，结果里以node_ 开头的单词，都是 PromQL 可以直接用的固定指标
+   2. 如：node_cpu_seconds_total          CPU 时间
+   3. 如：node_memory_MemTotal_bytes      总内存
+2. promql语法
+   1. 直接写指标名 = 查全部 如：`node_cpu_seconds_total`
+   2. {标签 ="值"} = 过滤 如：`node_cpu_seconds_total{cpu="0"}`
+      1. 默认就是瞬时向量过滤器
+   3. [1m] = 查一段时间
+      1. 这种写法就是用的区间向量过滤器
+   4. sum / avg / max = 聚合
+   5. irate / rate = 算速率
+   6. 四则运算 = 算使用率
+   7. 查过去某个时间点 / 时间段的数据
+      1. 如：查 1 小时前 的内存可用`node_memory_MemAvailable_bytes offset 1h`
+### 1-5 grafanade 启动
+启动 Grafana（备用）
+```js
+ sudo docker run -d \
+  -p 3000:3000 \
+  --name grafana \
+  -v /opt/grafana-storage:/var/lib/grafana \ // -v  宿主机目录   :   容器内目录
+  grafana/grafana
+```
+1. 访问：http://192.168.xxx.xxx:3000启动后，
+2. 默认账号密码：
+   1. Username：admin
+   2. Password：admin
+3. 添加 Prometheus 数据源
+4. 导入 / 创建自己的监控面板
+   1. 因为不同的人监控仪表盘是个性化定制的
+### 1-6 导入grafana的模版
+
+自行用时百度
+
+### 1-7 guages 和 counter指标
+
+prometheus的的3种数据类型，我们后续都围绕这3种数据进行展开
+
+1. guages：可增可减，当前值（瞬间值），最简单的度量指标
+   1. 特点：可增可减，反映当前状态，上下波动很正常
+   2. 现在温度，现在内存使用，现在 CPU 使用率，现在连接数
+2. Counter：只增不减，累计值（总数）
+   1. 特点：只升不降，只会增加，不会减少，重启服务会从 0 开始
+   2. 用来统计：总数、次数、总量，如：访问量、错误数、错误率、错误次数
+3. Histogram直方图：自动把数据分到不同区间（桶），统计每个区间有多少个，用来算 P90/P95/P99 延迟
+   1. Counter 只能算总数
+   2. Gauge 只能算当前值
+   3. 但你想知道：接口99% 的请求都在多少毫秒内
+      1. P50 / P90 / P95 / P99 延迟 → 必须用 Histogram
+
+### 1-8 Histogram 指标
+1. http_res_time : http接口响应时间
+2. 只用普通的一段时间响应时间平均数，很难发现问题，一般用p50，p90这种直方图类型的指标类型
+
+### 1-9 gin集成prometheus
+
+启动一个gin服务自定义1个指标对接它的pull请求，上报到prometheus，它采用的是拉模式，我们自己留一个接口，兼容prometheus的拉接口，prometheus会定时访问这个接口，获取数据。
+
+1. 示例代码见`jieduan9-自研微服务框架-gmicro/prom`
+2. 修改prometheus.yml的targets字段
+   1. 修改job_name: "node-exporter"的targets: ["192.168.10.10:8050"]  # 改成你的ginIP和端口号
+
+### 1-10 rpcserver的服务端拦截器集成prometheus
+
+1. 封装基本的metric方法在：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/core/metric`
+2. 封装服务端和客户端中间件去集成到系统中：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/serverinterceptors/prometheusinterceptor.go`
+
+### 1-11 rpcserver的客户端拦截器集成prometheus
+
+- 代码见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/clientinterceptors/prometheusinterceptor.go`
+1. 注意这个与服务端不是成对使用的，由用户自行选择使用场景
+
+### 1-12 如何将restserver的gin集成到prometheus中
+- 主要完成restserver的中间件集成prometheus
+- 网上有开源项目如`penglongli/gin-metrics`，开源直接借鉴使用
+  - 它是 Gin 专用、开箱即用的 Prometheus 指标中间件，帮你自动统计 HTTP 请求的：
+    - 请求总数（Counter）
+    - 各接口 QPS、状态码分布
+    - 响应耗时（Histogram，P95/P99）
+    - 慢请求数
+    - UV 数
+    - 等等。
+    - 底层就是封装了 Prometheus Go SDK，并提供了 Gin 中间件 + /metrics 自动路由
+  - 它的指标是在哪里计算的：在它的中间件源代码里计算，不是在你业务代码里
+    - 你调用 m.Use(r)，它会注册一个 全局 Gin 中间件。
+    - 每来一个请求 → 中间件先记录 startTime。
+    - 调用 c.Next() → 执行业务 handler。
+    - 业务结束后 → 中间件内部：
+    - 计算耗时 time.Since(start)
+    - 拿到 method/path/statusCode
+    - 调用内部的 metric.Observe()、metric.Inc()
+      - Histogram（直方图）专用，需要你告诉它：这次请求的耗时是多少毫秒 / 多少秒 → 扔进去 → 它自动分到对应的桶里。
+      - Observe(数值)= 把数值扔进 Histogram
+      - 只有 2 种指标会用 Observe ()： Histogram（最常用）和  Summary
+    - → 写入 Prometheus 指标。
+- 集成代码直接见`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/restserver/server.go`
+### 1-13 测试restserver的gin集成到prometheus
