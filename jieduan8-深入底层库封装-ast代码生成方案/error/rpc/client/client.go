@@ -4,16 +4,18 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
+	"time"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	"log"
-	"time"
 
 	pb "GoStart/error/rpc"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
@@ -67,6 +69,7 @@ func main() {
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(*addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		// 添加otelgrpc相关插件
 		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
 	)
 	if err != nil {

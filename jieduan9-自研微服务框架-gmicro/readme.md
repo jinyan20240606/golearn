@@ -1191,6 +1191,10 @@ a.cancel()
 - "go.opentelemetry.io/otel/exporters/jaeger" 这个exportes下，内置了很多厂商快速对接模块，因为它底层的协议是统一兼容的
   - 如能快速导出对接到Jaeger中
 - 示例代码见`jieduan9-自研微服务框架-gmicro/telemetry/ch01/main.go`
+
+#### 代码库注意
+
+1. `opentelemetry-go-contrib`: 主要是go语言的相关维护的一些封装好的现成插件库
 ### 1-3 SetAttribute设置链路的属性
 
 - 示例代码依然见`jieduan9-自研微服务框架-gmicro/telemetry/ch01/main.go`
@@ -1224,6 +1228,103 @@ a.cancel()
 2. 尾部采样tail_sampling：在 Collector 的 Processor 阶段
 
 ### 1-5 函数中传递span的context
+- 见`jieduan9-自研微服务框架-gmicro/telemetry/ch02/main.go`
+### 1-6 OpenTelemetry通过http完成span的传输
 
+- 见`jieduan9-自研微服务框架-gmicro/telemetry/ch03/main.go`，文件使用fasthttp库进行快速连接httpserver
+  - 并主要是注入TraceSpan信息
+- 用gin开发一个http-server见：`jieduan9-自研微服务框架-gmicro/telemetry/ch03/server/server.go`
+  - 接受http请求，主要负责span和Trace信息的提取
+  - `otel.GetTextMapPropagator()`主要用该方法抽取
+#### TextMapPropagator传播器 到底是干嘛的
+- 它就两件事（序列化 / 反序列化 Trace 信息）：
+  - Inject：把 traceId/spanId 从 context.Context 写到一个 “载体”（header、map、redis 字段）
+  - Extract：从载体读回 traceId/spanId，还原出带 SpanContext 的 ctx
+- `otel.SetTextMapPropagator(`：otel.SetTextMapPropagator(...)必须设置全局,给所有 OTel 插件（GORM、Redis、HTTP、gRPC）用的全局编解码器
+  - 只要你的项目涉及 “跨服务、跨进程、跨中间件” 传递 trace，就必须开启全局 Propagator。
+  - 只要你用了任何 OTel 插件（GORM/Redis/HTTP/gRPC），也必须开启。
+  - 你没有跨进程 / 跨服务 / 跨网络传递 trace！全程都在【同一个进程、同一个内存】里，不涉及把trace序列化进行跨服务传输反序列化提取，就可以不用这个全局传播器---- 如`jieduan9-自研微服务框架-gmicro/telemetry/ch02/main.go`
+### 1-7 自定义Inject和extract源码
+- 演示下自定义客户端注入和服务端抽取逻辑，比较麻烦，正常直接用官方的方法即可
+### 1-8 grpc集成OpenTelemetry
+
+- 很简单，集成示例见`jieduan8-深入底层库封装-ast代码生成方案/error/rpc`
+- 直接使用官方提供的github项目插件：`opentelemetry-go-contrib/instrumentation/google.golang.org/grpc/otelgrpc`
+### 1-9 otelgrpc源码解读
+本质是通过grpc的metadata里进行传输拿的
+### 1-10 设计 opentelemetry的options
+
+我们把opentelemetry的集成在我们的gemicro框架中，首先定义它的配置选项参数类型
+
+- 入口配置参数见`jieduan9-自研微服务框架-gmicro/mxshop/configs/user/srv.yaml`
+- 定义：`jieduan9-自研微服务框架-gmicro/mxshop/app/pkg/options/tracing.go`
+### 1-11 gemicro集成opentelemetry
+- 封装在core中trace目录：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/core/trace`
+  - 入口文件：jieduan9-自研微服务框架-gmicro/mxshop/gmicro/core/trace/agent.go
+- 主要在`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/rpcserver/client.go`中gemicro的rpc服务中的客户端封装和服务端封装中集成`opentelemetry-grpc`包
+  - `jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/rpc.go`中用户接入框架中自行引用提供的trace包进行全局初始化追踪器
+### 1-12 log和opentelemetry集成体验
+
+- 如见`jieduan9-自研微服务框架-gmicro/telemetry/ch03/main.go`使用自定义的log包进行打印`log.InfofC(spanCtx, "this is funca log: %s", string(b))`,
+  - 接受span上下文，就支持将日志也发送到jeager中显示
+### 1-13 opentelemetry集成log的源码解读
+
+- `std.InfofContext(ctx, format, v...)`日志源码主药见`jieduan8-深入底层库封装-ast代码生成方案/log1/log.go`
+  - `jieduan9-自研微服务框架-gmicro/mxshop/pkg/log/otelzap.go`的logFields方法
+
+### 1-14 gorm集成opentelemetry
+
+- `go-gorm/opentelemetry`github项目官方已经支持接入opentelemetry观测框架了
+  - `"gorm.io/plugin/opentelemetry/tracing"`提供这个包gorm的opentelemetry插件
+- 示例的demo见`jieduan9-自研微服务框架-gmicro/telemetry/ch03/server/server.go`
+  - 主要集成核心方法是用` db.Use(tracing.NewPlugin())`
+### 1-15 gorm集成opentelemetry的源码解读
+
+见`jieduan9-自研微服务框架-gmicro/telemetry/ch03/server/server.go`
+```js
+// 1. 全局安装一次插件 → 注册钩子
+db.Use(tracing.NewPlugin())
+
+// 2. 接口里：传 ctx → 触发钩子
+db.WithContext(spanCtx).Find(&user)
+  └→ Before钩子：建子Span（继承 traceId）
+  └→ 执行真实 SQL
+  └→ After钩子：记录SQL/耗时 → 结束Span
+```
+
+- 伪代码原理
+```js
+// db.Use(tracing.NewPlugin()) 到底做了什么,--- 只干一件事：给 GORM 注册 钩子（Callback）
+// 注册 SQL 执行前的钩子
+db.Callback().Query().Before("gorm:query").Register("otel:before", func(tx *gorm.DB) {
+    // 从 tx.Statement.Context 里拿 trace 信息
+    ctx := tx.Statement.Context  
+
+    // 创建 DB 的子 span
+    ctx, span := tracer.Start(ctx, "db.query")  
+
+    // 存起来给 after 用
+    tx.InstanceSet("otel:span", span) 
+})
+
+// 注册 SQL 执行后的钩子
+db.Callback().Query().After("gorm:after_query").Register("otel:after", func(tx *gorm.DB) {
+    // 结束 span
+    span := tx.InstanceGet("otel:span")
+    span.End()
+})
+
+// db.WithContext(spanCtx) 到底做了什么，---- 只干一件事：把 ctx 塞进 GORM 的 Statement，满足插件钩子的正常工作所需要的参数来源
+```
+### 1-16 gin集成opentelemetry
+
+- `opentelemetry-go-contrib/instrumentation/github.com/otelgin`github目录下面有gin的集成中间件，前面讲的gin都是基础集成demo，真正gin社区都有现成的插件直接可用
+- 集成示例代码见：`jieduan9-自研微服务框架-gmicro/telemetry/ch03/server/server.go`
+  - 如otelgin.Middleware("my-server")
+- 然后可以在我们的gemicro框架中集成这个`otelgin.Middleware`插件：`jieduan9-自研微服务框架-gmicro/mxshop/gmicro/server/restserver/middlewares/middleware.go`
+### 1-17 go-redis集成opentelemetry
+
+- go-redis/redis下面extra中有redisotel官方也支持快速集成了
+- 示例代码见：`jieduan9-自研微服务框架-gmicro/redis/main.go`
 ## 31周 系统监控核心
 

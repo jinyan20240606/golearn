@@ -1,7 +1,10 @@
 package main
 
 import (
-	"GoStart/telemetry/ch03/server/model"
+	"log"
+	"os"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -13,13 +16,11 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
-	"log"
-	"os"
-	"time"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
 
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	// 包gorm的opentelemetry插件
 	"gorm.io/plugin/opentelemetry/tracing"
 )
 
@@ -47,6 +48,7 @@ func tracerProvider() error {
 			),
 		),
 	)
+	// 全局生成 traceId/spanId
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	return nil
@@ -71,21 +73,31 @@ func Server(c *gin.Context) {
 	if err != nil {
 		panic(err)
 	}
-
+	// 给 GORM 安装 OpenTelemetry 追踪插件
+	// 它只干一件事：给 GORM 注册 sql执行前和sql执行后的钩子（Callback），钩子内部通过上下文获取spanCtx，并创建子span的生命周期
 	if err := db.Use(tracing.NewPlugin()); err != nil {
 		panic(err)
 	}
-	//负责span的抽取和生成
-	//ctx := c.Request.Context()
-	//p := otel.GetTextMapPropagator()
-	//tr := tp.Tracer(traceName)
-	//sctx := p.Extract(ctx, propagation.HeaderCarrier(c.Request.Header))
-	//spanCtx, span := tr.Start(sctx, "server")
+	// 负责span的抽取和生成
+	// ctx := c.Request.Context()
+	// p := otel.GetTextMapPropagator()
+	// tr := tp.Tracer(traceName)
+	// sctx := p.Extract(ctx, propagation.HeaderCarrier(c.Request.Header))
+	// spanCtx, span := tr.Start(sctx, "server") // 父子关联
+	// ========== 重点来了 ==========
+	// 因为上面装了 tracing.NewPlugin()
+	// 【方式1】这里只要把 spanCtx 传给 WithContext，GORM的插件注册的钩子 就会从WithContext中拿到spanCtx，自动创建 SQL span，不需要你手动处理 DB 的埋点！
+	// if err := db.WithContext(spanCtx).Model(model.User{}).Where("id = ?", 1).First(&model.User{}).Error; err != nil {
+	// 	panic(err)
+	// }
+	// defer span.End()
 
+	// 【方式2】========= 当使用官方提供的现成的otelgin.Middleware中间件时，上面的span抽取和上下文自动组装在c.Request.Context()里了，所以上面注释，下面直接引用即可，所以此时基于gorm的插件就能直接正常工作了
 	if err := db.WithContext(c.Request.Context()).Model(model.User{}).Where("id = ?", 1).First(&model.User{}).Error; err != nil {
 		panic(err)
 	}
 	time.Sleep(500 * time.Millisecond)
+
 	c.JSON(200, gin.H{})
 }
 
