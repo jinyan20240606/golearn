@@ -46,6 +46,7 @@ var lock sync.Mutex
 // 定位：
 // 可作为 SAGA 流程里正向动作或补偿动作，一套接口复用。
 func SagaAdjustBalance(db *sql.Tx, uid int, amount float64) error {
+	// db *sql.Tx 本身就是数据库事务对象，QueryRow、Exec 全部在当前事务中执行
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -113,6 +114,7 @@ func main() {
 	r := gin.Default()
 	// 转入接口
 	r.POST("/SagaBTransIn", func(c *gin.Context) {
+		// 获取子事务屏障
 		barrier := MustBarrierFromGin(c)
 		tx := db.Begin()
 		sourceTx := tx.Statement.ConnPool.(*sql.Tx)
@@ -136,6 +138,7 @@ func main() {
 	})
 	// 转入补偿接口
 	r.POST("/SagaBTransInCom", func(c *gin.Context) {
+		// 这块也得获取子事务屏障，代码后补
 		fmt.Println("转入失败， 开始补偿")
 		userID := 1
 		err := SagaAdjustBalance(db, userID, -100)
@@ -156,10 +159,14 @@ func main() {
 			userID := 3
 			err := SagaAdjustBalance(sourceTx, userID, -100)
 			if err != nil {
+				// 切记失败时，一定要返回状态码：否则dtm服务不知道你这个接口成功还是失败
 				if err.Error() == "余额不足" {
+					// 返回这个状态码代表表明失败，直接触发补偿
 					c.JSON(http.StatusConflict, gin.H{})
 				}
+				// 切记失败时，一定要返回状态码：否则dtm服务不知道你这个接口成功还是失败
 				fmt.Printf("转出失败:%s\r\n", err.Error())
+				// 代表ongoing状态：表明重试
 				c.JSON(500, gin.H{"msg": err.Error()})
 			}
 			fmt.Println("转出成功")
@@ -175,6 +182,7 @@ func main() {
 	r.POST("/SagaBTransOutCom", func(c *gin.Context) {
 		fmt.Println("转出失败， 开始补偿")
 		userID := 3
+		// 业务上要更严谨，没有转出不能补偿
 		err := SagaAdjustBalance(db, userID, 100)
 		if err != nil {
 			fmt.Printf("转出补偿失败:%s\r\n", err.Error())
@@ -188,6 +196,7 @@ func main() {
 		dmtServer := "http://127.0.0.1:36789/api/dtmsvr"
 		qsBusi := "http://127.0.0.1:8089"
 		saga := dtmcli.NewSaga(dmtServer, shortuuid.New()).
+			// 顺序：user3先转出到user1，user1再转入
 			// 添加一个TransOut的子事务，正向操作为url: qsBusi+"/TransOut"， 逆向操作为url: qsBusi+"/TransOutCom"
 			Add(qsBusi+"/SagaBTransOut", qsBusi+"/SagaBTransOutCom", req).
 			// 添加一个TransIn的子事务，正向操作为url: qsBusi+"/TransOut"， 逆向操作为url: qsBusi+"/TransInCom"

@@ -2,9 +2,6 @@ package v1
 
 import (
 	"context"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 	invpb "mxshop/api/inventory/v1"
 	"mxshop/app/inventory/srv/internal/domain/do"
 	"mxshop/app/inventory/srv/internal/domain/dto"
@@ -12,6 +9,10 @@ import (
 	"mxshop/app/pkg/code"
 	"mxshop/pkg/errors"
 	"mxshop/pkg/log"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type inventoryServer struct {
@@ -55,6 +56,7 @@ func (is *inventoryServer) Sell(ctx context.Context, info *invpb.SellInfo) (*emp
 		return nil, err
 	}
 	//time.Sleep(5 * time.Second)
+	// 这个是故意制造异常，触发saga的补偿机制
 	//return nil, status.Errorf(codes.Aborted, " err.Error()")
 	return &emptypb.Empty{}, nil
 }
