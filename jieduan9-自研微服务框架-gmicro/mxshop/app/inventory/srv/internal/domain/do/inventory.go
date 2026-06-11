@@ -11,6 +11,7 @@ type GoodsDetail struct {
 	Num   int32
 }
 
+// 对slice定义个别名，方便增加接口方法，让sort包进行识别排序
 type GoodsDetailList []GoodsDetail
 
 func (a GoodsDetailList) Len() int           { return len(a) }

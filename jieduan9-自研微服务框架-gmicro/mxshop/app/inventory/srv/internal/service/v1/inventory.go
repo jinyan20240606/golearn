@@ -2,13 +2,16 @@ package v1
 
 import (
 	"context"
-	"github.com/go-redsync/redsync/v4"
-	redsyncredis "github.com/go-redsync/redsync/v4/redis"
 	v1 "mxshop/app/inventory/srv/internal/data/v1"
 	"mxshop/app/pkg/code"
 	"mxshop/app/pkg/options"
 	"mxshop/pkg/errors"
+
+	// 排序的包
 	"sort"
+
+	"github.com/go-redsync/redsync/v4"
+	redsyncredis "github.com/go-redsync/redsync/v4/redis"
 
 	"mxshop/app/inventory/srv/internal/domain/do"
 	"mxshop/app/inventory/srv/internal/domain/dto"
@@ -55,6 +58,7 @@ func (is *inventoryService) Get(ctx context.Context, goodsID uint64) (*dto.Inven
 	return &dto.InventoryDTO{InventoryDO: *inv}, nil
 }
 
+// 重点看，稍复杂
 func (is *inventoryService) Sell(ctx context.Context, ordersn string, details []do.GoodsDetail) error {
 	log.Infof("订单%s扣减库存", ordersn)
 	//解决了空悬挂的问题
@@ -62,12 +66,14 @@ func (is *inventoryService) Sell(ctx context.Context, ordersn string, details []
 
 	rs := redsync.New(is.pool)
 	//实际上批量扣减库存的时候， 我们经常会先按照商品的id排序，然后从小大小逐个扣减库存，这样可以减少锁的竞争
-	//如果无序的话 那么就有可能订单a 扣减 1,3,4 订单B 扣减 3,2,1
+	//如果无序的话 那么就有可能订单a 扣减 1,3,4 订单B 扣减 3,2,1，多个订单最好是都从1开始，就减少了锁竞争
 	var detail = do.GoodsDetailList(details)
 	sort.Sort(detail)
 
+	// 开启全局事务
 	txn := is.data.Begin()
 	defer func() {
+		// 必须要加兜底回滚
 		if err := recover(); err != nil {
 			_ = txn.Rollback()
 			log.Error("事务进行中出现异常，回滚")
@@ -86,7 +92,7 @@ func (is *inventoryService) Sell(ctx context.Context, ordersn string, details []
 		if err := mutex.Lock(); err != nil {
 			log.Errorf("订单%s获取锁失败", ordersn)
 		}
-      		defer mutex.Unlock()
+		defer mutex.Unlock()
 
 		inv, err := is.data.Inventorys().Get(ctx, uint64(goodsInfo.Goods))
 		if err != nil {
@@ -138,6 +144,7 @@ func (is *inventoryService) Reback(ctx context.Context, ordersn string, details 
 
 	//库存归还的时候有不少细节
 	//1. 主动取消 2. 网络问题引起的重试 3. 超时取消 4. 退款取消
+	// --- 也应该加分布式锁，防止并发请求重复归还
 	mutex := rs.NewMutex(orderLockPrefix + ordersn)
 	if err := mutex.Lock(); err != nil {
 		txn.Rollback() //回滚
@@ -168,6 +175,7 @@ func (is *inventoryService) Reback(ctx context.Context, ordersn string, details 
 	}
 
 	var detail = do.GoodsDetailList(details)
+	// 排序
 	sort.Sort(detail)
 
 	for _, goodsInfo := range detail {
