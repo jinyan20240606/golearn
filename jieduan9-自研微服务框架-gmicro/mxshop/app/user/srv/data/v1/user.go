@@ -2,8 +2,9 @@ package v1
 
 import (
 	"context"
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 
 	metav1 "mxshop/pkg/common/meta/v1"
 )
@@ -47,10 +48,10 @@ type UserStore interface {
 		有数据访问的方法，一定要有error
 		参数中最好有ctx
 	*/
-	//用户列表
+	//用户列表: 后台管理系统用的
 	List(ctx context.Context, orderby []string, opts metav1.ListMeta) (*UserDOList, error)
 
-	//通过手机号码查询用户
+	//通过手机号码查询用户：
 	GetByMobile(ctx context.Context, mobile string) (*UserDO, error)
 
 	//通过用户ID查询用户

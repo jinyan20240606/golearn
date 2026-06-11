@@ -1,8 +1,6 @@
 package goods
 
 import (
-	"github.com/gin-gonic/gin"
-	ut "github.com/go-playground/universal-translator"
 	proto "mxshop/api/goods/v1"
 	"mxshop/app/mxshop/api/internal/domain/request"
 	"mxshop/app/mxshop/api/internal/service"
@@ -10,6 +8,9 @@ import (
 	gin2 "mxshop/app/pkg/translator/gin"
 	"mxshop/pkg/common/core"
 	"mxshop/pkg/log"
+
+	"github.com/gin-gonic/gin"
+	ut "github.com/go-playground/universal-translator"
 )
 
 type goodsController struct {

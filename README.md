@@ -1,6 +1,7 @@
 # golearn
 
 笔记参考百度网盘的6-go语言工程师体系课
+1. goanno--- 自动注释插件
 
 ## go语言原理相关
 
@@ -50,6 +51,12 @@
   - 你执行一次 wg.Add(1)，计数器 +1
   - 你执行一次 wg.Done()，计数器 -1
   - 当计数器 = 0 时，wg.Wait() 就会停止阻塞，继续往下走
+10. 学会syncMap与map的区别用法
+    1.  原生 map：
+        1.  多 goroutine 同时读 + 写 / 同时写 → 直接 fatal error: concurrent map writes。
+        2.  并发使用必须手动搭配 sync.Mutex / sync.RWMutex。
+    2.  sync.Map：Go 标准库并发安全映射，专为高并发读写设计，无需额外加锁
+        1.  底层做了并发控制，天然支持多协程并发读写，无需手动加锁
 
 ### 类型的表达式运算
 1. `int / int` → 结果是 **整数**（小数直接截断，不会四舍五入）

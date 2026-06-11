@@ -2,12 +2,13 @@ package db
 
 import (
 	"context"
-	"gorm.io/gorm"
 	"mxshop/app/pkg/code"
 	dv1 "mxshop/app/user/srv/data/v1"
 	code2 "mxshop/gmicro/code"
 	metav1 "mxshop/pkg/common/meta/v1"
 	"mxshop/pkg/errors"
+
+	"gorm.io/gorm"
 )
 
 type users struct {
@@ -94,11 +95,12 @@ func newUsers(db *gorm.DB) *users {
 	return &users{db: db}
 }
 
+// 防御性编程
 var _ dv1.UserStore = &users{}
 
 // List
 //
-//	@Description: 获取用户列表, 凡是列表页返回的时候都应该返回总共有多少个
+//	@Description: ${todo}
 //	@receiver u
 //	@param ctx
 //	@param orderby

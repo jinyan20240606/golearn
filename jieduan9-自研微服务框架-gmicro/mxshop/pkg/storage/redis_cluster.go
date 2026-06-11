@@ -9,11 +9,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	// 功能：自动拦截所有 Redis 命令调用，生成 Span，记录调用耗时、命令、Key、异常、堆栈，
+	// 并入全链路追踪体系（Jaeger、Zipkin、SkyWalking 等）。
+	"mxshop/pkg/errors"
+
 	"github.com/go-redis/redis/extra/redisotel/v9"
 	redis "github.com/go-redis/redis/v9"
 	uuid "github.com/satori/go.uuid"
 	"github.com/spf13/viper"
-	"mxshop/pkg/errors"
 
 	"mxshop/pkg/log"
 )

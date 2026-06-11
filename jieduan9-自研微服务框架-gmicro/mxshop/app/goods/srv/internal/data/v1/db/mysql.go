@@ -2,8 +2,6 @@ package db
 
 import (
 	"fmt"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 	"log"
 	v1 "mxshop/app/goods/srv/internal/data/v1"
 	"mxshop/app/pkg/code"
@@ -12,6 +10,9 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"gorm.io/driver/mysql"
 )
@@ -69,7 +70,7 @@ func GetDBFactoryOr(mysqlOpts *options.MySQLOptions) (v1.DataFactory, error) {
 			mysqlOpts.Port,
 			mysqlOpts.Database)
 
-		//希望大家自己可以去封装logger
+		//希望大家自己可以去封装logger，将我们封装的logger集成进来
 		newLogger := logger.New(
 			log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer（日志输出的目标，前缀和日志包含的内容——译者注）
 			logger.Config{

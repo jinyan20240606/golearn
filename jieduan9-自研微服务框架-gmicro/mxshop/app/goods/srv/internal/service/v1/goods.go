@@ -9,9 +9,10 @@ import (
 	"mxshop/app/goods/srv/internal/domain/dto"
 	"sync"
 
-	"github.com/zeromicro/go-zero/core/mr"
 	metav1 "mxshop/pkg/common/meta/v1"
 	"mxshop/pkg/log"
+
+	"github.com/zeromicro/go-zero/core/mr"
 )
 
 type GoodsSrv interface {
@@ -134,11 +135,13 @@ func (gs *goodsService) Create(ctx context.Context, goods *dto.GoodsDTO) error {
 		return err
 	}
 
-	//之前的入es的方案是给gorm添加aftercreate
-	//分布式事务， 异构数据库的事务， 基于可靠消息最终一致性
-	//比较重的方案： 每次都要发送一个事务消息
-	txn := gs.data.Begin() //非常小心， 这种方案是不是就没有问题了呢
-	defer func() { //很重要
+	//方案1:之前的入es的方案是给gorm添加aftercreate
+	//方案2:原来做的 分布式事务， 异构数据库的事务， 基于可靠消息最终一致性方案 ---- 也是比较重的方案： 每次都要发送一个事务消息
+	//方案3:下面这种方案通过获取全局的数据库事务对象来解决数据库和es的同步问题------ 这种方案是不是就没有问题了呢，还是有缺点的，最终一致性比可靠消息稍微弱一点
+	//  ---- 因为操作es时，万一es接口1秒超时了，但网速延迟2秒后已经通知到es了，那么此时就不一致了，还是没有RocketMQ的事务消息机制可靠方案强，
+	//  ---- 对于一致性不高的场景，可以简单用这个
+	txn := gs.data.Begin() // 只要你开启事务，非常小心， 千万不要忘记回滚和commit，
+	defer func() {         //防止万一程序此时挂了， 事务没有回滚， 这个地方很重要，一定要紧接者加上这个recover的回滚逻辑
 		if err := recover(); err != nil {
 			txn.Rollback()
 			log.Errorf("goodsService.Create panic: %v", err)
@@ -169,6 +172,7 @@ func (gs *goodsService) Create(ctx context.Context, goods *dto.GoodsDTO) error {
 		ShopPrice:   goods.ShopPrice,
 	}
 
+	// 万一es接口1秒超时了，但网速慢2秒后已经通知到es了，那么此时就不一致了，还是没有RocketMQ的事务消息机制可靠方案强，
 	err = gs.searchData.Goods().Create(ctx, &searchDO) //这个接口如果超时了
 	if err != nil {
 		txn.Rollback()
@@ -189,25 +193,31 @@ func (gs *goodsService) Delete(ctx context.Context, ID uint64) error {
 }
 
 func (gs *goodsService) BatchGet(ctx context.Context, ids []uint64) ([]*dto.GoodsDTO, error) {
-	//go-zero 非常好用， 但是我们自己去做并发的话 - 一次性启动多个goroutine
+	// 如果不想用底层提供的批量接口，可以用这个包进行并发查询，帮我封装了很多细节
+	//go-zero提供了一个map-reduce包 非常好用， 但是我们自己去做并发的话 - 一次性启动多个goroutine
 	var ret []*dto.GoodsDTO
 	var callFuncs []func() error
 	var mu sync.Mutex
 	for _, value := range ids {
-		//大坑
+		//tmp := value 必须这样写，// 必须临时变量拷贝
 		tmp := value
 		callFuncs = append(callFuncs, func() error {
 			goodsDTO, err := gs.Get(ctx, tmp)
-			mu.Lock()
+			mu.Lock() // 保证线程并发安全
 			ret = append(ret, goodsDTO)
 			mu.Unlock()
 			return err
 		})
 	}
+	// 	逐个执行传入的函数切片，每个函数单独起 goroutine
+	// 等待所有协程执行完毕
+	// 聚合所有错误：只要有一个函数返回 error，mr.Finish 就返回错误
+	// 内置协程池、panic 捕获、超时控制（可配置）
 	err := mr.Finish(callFuncs...)
 	if err != nil {
 		return nil, err
 	}
+	// 使用底层提供的批量接口
 	//ds, err := gs.data.ListByIDs(ctx, ids, []string{})
 	//if err != nil {
 	//	return nil, err

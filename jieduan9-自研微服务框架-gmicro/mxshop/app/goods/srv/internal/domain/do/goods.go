@@ -37,10 +37,12 @@ type GoodsSearchDOList struct {
 type GoodsDO struct {
 	gorm2.BaseModel
 
-	CategoryID int32      `gorm:"type:int;not null"`
-	Category   CategoryDO `gorm:"foreignKey:CategoryID;references:ID" json:"category"`
-	BrandsID   int32      `gorm:"type:int;not null"`
-	Brands     BrandsDO   `gorm:"foreignKey:BrandsID;references:ID" json:"Brands"`
+	CategoryID int32 `gorm:"type:int;not null"`
+	// Category *CategoryDO `gorm:"foreignKey:CategoryID;references:ID" json:"category"`
+	// 空指针Bug：这块不能写指针，有可能空指针controller/v1/goods.go中ModelToResponse使用方`Id:   goods.Category.ID` 可能会出错
+	Category CategoryDO `gorm:"foreignKey:CategoryID;references:ID" json:"category"`
+	BrandsID int32      `gorm:"type:int;not null"`
+	Brands   BrandsDO   `gorm:"foreignKey:BrandsID;references:ID" json:"Brands"`
 
 	OnSale   bool `gorm:"default:false;not null"`
 	ShipFree bool `gorm:"default:false;not null"`

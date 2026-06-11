@@ -14,6 +14,7 @@ import (
 	"github.com/buger/jsonparser"
 	uuid "github.com/satori/go.uuid"
 
+	// 默认主流哈希算法库：murmur3 32 位，体积小、速度极快，多用于分片、路由、缓存 key。
 	"mxshop/third_party/forked/murmur3"
 )
 
@@ -133,6 +134,7 @@ var (
 	HashMurmur128 = "murmur128"
 )
 
+// 这是一个哈希构造工厂函数，根据传入的算法名称，创建并返回对应实现 hash.Hash 接口的哈希实例，统一屏蔽不同哈希库的调用差异；默认降级到 murmur3 32位。
 func hashFunction(algorithm string) (hash.Hash, error) {
 	switch algorithm {
 	case HashSha256:
