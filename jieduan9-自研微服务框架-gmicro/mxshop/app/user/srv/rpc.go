@@ -2,13 +2,14 @@ package srv
 
 import (
 	"fmt"
-	"github.com/alibaba/sentinel-golang/ext/datasource"
-	"github.com/nacos-group/nacos-sdk-go/clients"
-	"github.com/nacos-group/nacos-sdk-go/common/constant"
 	upb "mxshop/api/user/v1"
 	"mxshop/app/pkg/options"
 	"mxshop/gmicro/core/trace"
 	"mxshop/gmicro/server/rpcserver"
+
+	"github.com/alibaba/sentinel-golang/ext/datasource"
+	"github.com/nacos-group/nacos-sdk-go/clients"
+	"github.com/nacos-group/nacos-sdk-go/common/constant"
 
 	"github.com/alibaba/sentinel-golang/pkg/adapters/grpc"
 	"github.com/alibaba/sentinel-golang/pkg/datasource/nacos"
@@ -62,6 +63,7 @@ func NewUserRPCServer(telemetry *options.TelemetryOptions, serverOpts *options.S
 	var opts []rpcserver.ServerOption
 	opts = append(opts, rpcserver.WithAddress(rpcAddr))
 	if serverOpts.EnableLimit {
+		// 添加sentinel限流拦截器
 		opts = append(opts, rpcserver.WithUnaryInterceptor(grpc.NewUnaryServerInterceptor()))
 		//我去初始化nacos
 		err := dataNacos.Initialize()

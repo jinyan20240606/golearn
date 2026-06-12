@@ -56,7 +56,7 @@ func main() {
 	defer conn.Close()
 
 	uc := v1.NewUserClient(conn)
-
+	// for循环，高并发测试sentinel的限流逻辑
 	for {
 		_, err := uc.GetUserList(context.Background(), &v1.PageInfo{})
 		if err != nil {

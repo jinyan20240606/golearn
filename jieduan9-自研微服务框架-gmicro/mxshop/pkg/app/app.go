@@ -3,16 +3,18 @@ package app
 import (
 	"fmt"
 	"os"
+
 	//controller(参数校验) ->service(具体的业务逻辑) -> data(数据库的接口)
-	"github.com/fatih/color"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	cliflag "mxshop/pkg/common/cli/flag"
 	"mxshop/pkg/common/cli/globalflag"
 	"mxshop/pkg/common/term"
 	"mxshop/pkg/common/version"
 	"mxshop/pkg/common/version/verflag"
 	"mxshop/pkg/errors"
+
+	"github.com/fatih/color"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"mxshop/pkg/log"
 )
@@ -165,6 +167,8 @@ func NewApp(name string, basename string, opts ...Option) *App {
 	return a
 }
 
+// 根据 App 配置，动态构建出完整的 cobra.Command 命令实例。
+// 流程：填充命令基础信息 → 挂载子命令 → 绑定运行函数 → 注册各类参数 / 全局参数 / 版本 / 配置参数 → 自定义帮助 / 使用文案 → 最终把生成的 cobra 命令挂载到 a.cmd。
 func (a *App) buildCommand() {
 	cmd := cobra.Command{
 		Use:   FormatBaseName(a.basename),

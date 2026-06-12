@@ -532,6 +532,30 @@ func DecrStock(c *gin.Context) {
     - 如`jieduan9-自研微服务框架-gmicro/mxshop/app/mxshop/api/internal/service/service.go`工厂的相关使用
     - `jieduan9-自研微服务框架-gmicro/mxshop/app/mxshop/api/router.go`中，直接使用工程创建好的依赖了，就不用在这单独手动创建各个依赖了
   - 后面介绍更好的ioc框架，wire
+- DI依赖注入
+  - IoC 是目标 / 思想（要把控制权转出去）
+  - DI 是一种落地方式（用 “注入” 来实现控制权转移）,工厂函数也一种落地方式
+      ```go
+      type Pay struct{}
+      func (p *Pay) Pay() {}
+
+      type OrderSvc struct {
+          pay *Pay
+      }
+
+      // 构造函数：接收外部传入的依赖（构造器注入 DI）
+      func NewOrderSvc(pay *Pay) *OrderSvc {
+          return &OrderSvc{pay: pay}
+      }
+
+      // ========== 外部（容器/调用方）负责创建 & 注入 ==========
+      func main() {
+          // 外部创建依赖
+          pay := &Pay{}
+          // DI：把 pay 注入 OrderSvc，完成 IoC
+          svc := NewOrderSvc(pay)
+      }
+  ```
 
 - 还有一个概念：DIP：依赖倒置
   - 依赖倒置本质：高层模块不要依赖低层模块，二者都要依赖「抽象」；抽象不依赖细节，细节依赖抽象。
@@ -542,6 +566,7 @@ func DecrStock(c *gin.Context) {
   - **面向接口编程 是 依赖倒置原则 的主要落地手段。**
     - 如封装gemicro框架中的底层服务发现库的接入不是内部写死依赖执行的，而是内部只上层传入的依赖鸭子接口去执行
     - "mxshop/gmicro/registry/consul"这个不同服务发现库只放在外层用户去使用，进行传参到框架内部，
+      - 通过传参依赖的方式其实也是算控制反转，依赖的初始化控制权交给外部
     - 框架内部只判断是否符合我的鸭子接口，符合就调用，不关心你是什么库consul还是etcd
       ```js
       // 这是JS版的缩版实现：
@@ -572,7 +597,131 @@ func DecrStock(c *gin.Context) {
       new OrderService(new WechatPay()).createOrder();
       new OrderService(new Alipay()).createOrder();
       ```
+- AOP概念 = Aspect-Oriented Programming 面向切面编程
+  - OOP：纵向划分，以类、对象、继承、接口组织代码，解决业务领域拆分。
+  - AOP：横向划分，抽取跨类、跨方法的通用逻辑，弥补 OOP 的短板。
+  - 二者互补，不是替代：正常开发依然用 OOP 做业务分层，用 AOP 统一处理横切逻辑。
+  - 本质：把跨多个业务模块、重复的通用横切逻辑（日志、鉴权、事务、监控等）从核心业务代码中抽离，在不修改原有业务代码的前提下，统一增强、拦截、织入逻辑。
+  - 核心术语
+    - 切面 (Aspect)：横切逻辑的载体，一个类 / 模块，包含通知、切点。
+    - 切点 (Pointcut)：规则，用来匹配哪些目标方法需要被增强（比如所有接口、所有 Create 方法）。
+    - 通知 (Advice)：切面里具体要执行的逻辑，分 5 类：
+      - Before：目标方法执行前执行
+      - After：目标方法执行后（无论成功 / 异常）
+      - AfterReturning：方法正常返回后
+      - AfterThrowing：方法抛出异常时
+      - Around：环绕，包裹目标方法，可在前后都处理，还能控制方法是否执行
+      - 织入 (Weaving)：把切面逻辑动态插入到目标方法的过程。
+    ```js
+    // 前端缩版实现
+    // 切面：日志 Before 通知
+    function LogBefore(target: any, methodName: string, desc: PropertyDescriptor) {
+      const oldFn = desc.value;
+      desc.value = function(...args: any[]) {
+        console.log(`方法 ${methodName} 开始执行`); // 切面逻辑
+        return oldFn.apply(this, args); // 执行原业务方法
+      };
+    }
+
+    // 目标类 + 使用切面
+    class OrderService {
+      @LogBefore // 织入切面
+      createOrder() {
+        console.log("核心业务：创建订单");
+      }
+    }
+
+    new OrderService().createOrder();
+    ```
 
 
 ### 2-2 ioc框架选型
 
+- Go 生态里，Uber Dig、Facebook Inject 等主流依赖注入框架，均基于运行时反射实现依赖注入。而 Wire 与之核心差异在于：它依靠代码生成在编译阶段完成依赖注入，全程不依赖运行时反射、也无运行时状态。即便不借助自动生成能力，按照 Wire 的编码规范手写初始化逻辑，同样能收获良好的代码结构。
+- 框架对比
+  - Wire：
+    - 定位：只做依赖注入的代码生成工具，不是框架。
+    - 哲学：Clear is better than clever，拒绝反射，追求透明、可审计、无黑盒。
+    - 基于代码生成产出容器代码，逻辑直观、可读性强；
+    - 调试友好，依赖缺失、冗余等问题会在编译阶段直接报错，提前规避线上隐患。
+  - 阿里巴巴也有个开源的ioc-golang的框架，也是采用代码生成的方式
+    - 定位：一站式 IoC 框架，对标 Spring，强调「IoC + AOP + 运维生态」。
+    - 哲学：强容器 + 强扩展，把 AOP 作为一等公民，面向复杂微服务与运维场景。
+    - 还处于初期，没有wire成熟，这种只建议学习原理
+- 延伸思考：落地到微服务场景，我对 IoC / 依赖注入持保守态度。这类能力更多属于锦上添花的优化项，并非微服务架构的刚需。
+
+
+### 2-3 wire快速入门
+- `jieduan10-基于gmicro重构项目/ioc/main.go`
+
+1. 安装wire依赖：`go get github.com/google/wire`
+   1. 安装成功后有一个exe可执行文件,确保能在终端运行`wire`命令
+2. 编写wire文件：`jieduan10-基于gmicro重构项目/ioc/wire.go`
+   1. 重点学习下它的文件顶层标签语法注解，这是golang的语法
+3. 核心概念定义（Wire 专属）
+   1. Provider（提供者）：传入`wire.Build`方法的提供者函数
+      1. 普通 Go 函数，职责是创建实例、提供依赖。
+         1. 每个Provider函数必须符合的规则： 每个Provider的返回值都是其他Provider的参数；
+         2. 你代码里：NewEvent、NewGreeter、NewMessage 都是 Provider,而且返回值都是其他Provider的参数。
+      2. 规则：
+         1. 入参 = 自身依赖项；
+         2. 返回值 = 对外提供的实例；
+         3. 就是普通构造函数，无任何框架侵入。
+   2. Injector（注入器）
+      1. 就是 `initEvent` 这类函数：声明最终要构建的对象，聚合所有 Provider，是调用方的统一入口。
+         1. 注意：函数名完全自定义，只要符合规范即可
+      2. 代码生成逻辑
+   3. 执行 wire 命令后，工具扫描 wire.go：
+      1. 解析所有 Provider 的依赖链；
+      2. 自动排序执行顺序（被依赖者先创建）；
+      3. 生成 wire_gen.go，把占位的 panic 替换为纯手写风格的初始化代码
+
+### 2-4&5 通过wire重构user的service服务
+
+我们以user服务的app.go文件为例，通过wire重构
+
+- 文件见：`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/app.go`
+- 我们重点是重构app.go下的`func run(`方法下的`NewUserApp方法调用`：因为这里面包含了很多依赖的创建逻辑，需要控制反转
+- 创建wire.go文件
+  - 用前面demo的默认wire写法行不通，
+  - 需要先改造`micro/mxshop/app/user/srv/app.g`文件,把Provider函数全部改造成全部接收参数型的纯函数
+
+### 2-6 通过providerset简化初始化
+
+- 可以使用提供的组合语法，在wire.go中直接使用组合的Provider：`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/data/v1/db/db.go`
+### 2-7 sentinel集成nacos
+
+- 接下来考虑熔断限流问题，nacos一般不会存放redis，mysql等配置文件，一般存熔断限流的配置文件，这种配置改的是比较频繁的
+  - redis，mysql等配置文件一般放在本地的yaml配置文件，因为他们的配置不是频繁改的，而且只要改就需要涉及重启服务
+- sentinelgolang目前支持多数据源，也支持nacos集成
+- 本节主要做：
+  - 集成 Alibaba Sentinel-Go：Go 语言流量控制、熔断降级、系统防护组件；
+  - 对接 Nacos 配置中心：从 Nacos 动态拉取流控规则，规则变更实时生效；
+  - 启动 10 个常驻协程模拟持续请求流量；
+  - 通过原子计数器统计 总请求数、通过数、被拦截数，每秒打印监控指标；
+  - 规则完全托管在 Nacos，无需重启服务即可更新限流策略。
+- 示例代码见：`jieduan10-基于gmicro重构项目/sentinel/main.go`
+
+### 2-8 集成sentinel和nacos
+
+- 将sentinel集成到我们的gemicro框架中
+  - 有3个地方需要加：rpcserver的服务端和客户端，restserver 服务端
+  - 我们直接用官方提供的适配示例文件
+- 代码改造
+  - 先在app下增加nacos的配置文件选项：`jieduan9-自研微服务框架-gmicro/mxshop/app/pkg/options/nacos.go`
+    - yml配置文件：`jieduan9-自研微服务框架-gmicro/mxshop/configs/user/srv.yaml`
+    - 后续sentinel的配置是直接实时从nacos读取
+  - `jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/config/config.go`,每个app下的微服务下配置文件初始化nacos配置
+  - `jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/rpc.go`中`rpcserver.NewServer时`集成sentinel插件
+    - 使用`sentinel-golang/pkg/adapters/grpc`官方提供的这个包
+    - `jieduan9-自研微服务框架-gmicro/mxshop/app/pkg/options/server.go`添加`EnableLimit`配置项，直接rpc.go中判断添加
+    - 单独封装`NewNacosDataSource`初始化方法，仅在`EnableLimit`开关后才初始化，并集成到wire中
+    - 集成wire时：`jieduan9-自研微服务框架-gmicro/mxshop/app/user/srv/app.go`中需要`run的initApp中`多传个`initApp(cfg.Nacos,`nacos配置
+### 2-9 调试sentinel集成nacos
+
+- 测试：在`jieduan9-自研微服务框架-gmicro/mxshop/app/user/client/client.go`中写测试代码
+  - for循环，高并发测试sentinel的限流逻辑
+
+### 后续
+
+- 后续部署上线时，用这个脚本文件前置运行实现以下功能：`jieduan9-自研微服务框架-gmicro/mxshop/scripts/init.sh`

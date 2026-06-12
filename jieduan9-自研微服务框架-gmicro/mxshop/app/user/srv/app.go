@@ -64,6 +64,8 @@ func NewUserApp(logOpts *log.Options, register registry.Registrar,
 
 func run(cfg *config.Config) app.RunFunc {
 	return func(baseName string) error {
+		// 这是wire重构之前的用法，现在使用wire重构成直接使用initApp
+		// userApp, err := NewUserApp(cfg.Nacos, cfg.Log, cfg.Server, cfg.Registry, cfg.Telemetry, cfg.MySQLOptions)
 		userApp, err := initApp(cfg.Nacos, cfg.Log, cfg.Server, cfg.Registry, cfg.Telemetry, cfg.MySQLOptions)
 		if err != nil {
 			return err
