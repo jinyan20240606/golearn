@@ -358,6 +358,13 @@ gRPC：code=FailedPrecondition
 所有非 409/425/200-SUCCESS 的错误（500、网络超时、连接失败等）：
 DTM 视为未知异常 → 自动重试（指数退避）----- 走配置的重试策略，如触发告警规则等
 ```
+
+
+#### saga重点注意
+
+- 每种模式或协议将事务提交之后，立即返回，不等待事务结束。但某些实际应用的场景，很多时候希望在整个全局事务完成之后，返回给用户最终结果
+  - 通过等待事务结果，可以通过query接口查询全局事务的状态：https://dtm.pub/ref/options.html#%E7%AD%89%E5%BE%85%E4%BA%8B%E5%8A%A1%E7%BB%93%E6%9E%9C
+  - 客户端检查Submit返回的错误，如果为nil，则表示整个全局事务已经正常完成。如果不是nil，不意味全局事务已回滚，可能的情况有很多，客户端最好通过 dtm 的 query 接口查询全局事务的状态
 ### 2-6 grpc的事务编排
 
 - 代码见`jieduan10-基于gmicro重构项目/dtm/rpc/main.go`
@@ -464,3 +471,50 @@ func DecrStock(c *gin.Context) {
 
 ### 1-1 订单系统data层数据接口定义
 
+1. 建立order相关的proto文件：`jieduan9-自研微服务框架-gmicro/mxshop/api/order`
+2. 创建`jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv`
+3. `jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/data/v1/data.go`先创建接口，再面向接口实现
+### 1-2 实现order和购物车的接口重构
+
+- `jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/data/v1/db/shopcart.go`
+
+### 1-3 完成datafactory重构
+- `jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/data/v1/db/db.go`统一暴露数据接口工厂，含grpc和db数据库等接口，对外统一暴露
+### 1-4 订单service层重构
+
+`jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/service`
+
+- 重点注意
+- 订单号生成算法规则：`jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/controller/order/v1/order.go`
+  - 在这个client创建提交的：`jieduan9-自研微服务框架-gmicro/mxshop/app/order/client/client.go`
+  - 订单号常见的生成算法：雪花算法，目前项目用的(时间戳+userid+随机数)
+    - 雪花算法是全局递增的，符合特殊场景的业务需求，可以代表订单的增量趋势的。
+    - 「订单增量趋势」（你当前需求）
+    - ✅ 雪花 ID 完全够用
+      - ID 整体趋势递增：新订单 ID 一定普遍大于老订单
+      - 按 order_sn 倒序 = 按下单时间倒序
+      - 对比不同时间段的最大 ID，能直观判断：订单量涨 / 跌、高峰时段
+    - 查询 / 分页友好：按 order_sn 倒序，等价于按下单时间倒序，索引效率高。
+    - 分库分表适配：有序 ID 做分片键，数据分布均匀，避免热点库。
+### 1-5&6 通过saga事务重构分布式事务
+
+- 见相关实现saga的`jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/service/v1/order.go` 
+  - `1-6部分 新建订单和补偿接口实现`：- Submit方法这个是创建订单事务编排的，业务入口方法，它内部会通过saga调用Create接口
+    - Create接口的常见
+- 创建dtm相关的配置选项文件：`jieduan9-自研微服务框架-gmicro/mxshop/app/pkg/options/dtm.go`
+- 初始化这个dtm的配置选项`jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/config/config.go`
+- 在这个文件dtm配置使用：`jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/service/v1/order.go`
+
+### 1-7 重构controller层的submitorder接口
+
+- 新建`jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/controller/order/v1/order.go`
+### 1-8 启动订单服务-重构
+
+- `jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/internal/controller/order/v1/order.go`
+  - CreateOrder方法：是给分布式事务saga调用的，目前没为api提供的目的，只是Submit内内部调用的
+- `jieduan9-自研微服务框架-gmicro/mxshop/app/order/srv/app.go`新增app.go和rpc.go文件，准备启动链路
+- cmd入口：`jieduan9-自研微服务框架-gmicro/mxshop/cmd/order/order.go`
+### 1-9&10 调试新建订单接口
+
+- `jieduan9-自研微服务框架-gmicro/mxshop/app/order/client/client.go`创建client进行测试调试
+- 排查测试中的bug

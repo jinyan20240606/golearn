@@ -43,6 +43,7 @@ func main() {
 		saga := dtmgrpc.NewSagaGrpc(dmtServer, orderSn).
 			// 添加一个SAGA步骤：正向接口、补偿接口、请求参数
 			// 正向：扣库存，// 补偿：还库存，// 传给正向接口的参数
+			// 3参为对应的请求参数
 			Add(qsBusi+"/Inventory/Sell", qsBusi+"/Inventory/Reback", req)
 
 		// 6. 提交SAGA事务，交给DTM调度执行

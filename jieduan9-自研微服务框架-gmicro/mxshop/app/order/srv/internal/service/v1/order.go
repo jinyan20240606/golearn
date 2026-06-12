@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"github.com/dtm-labs/client/dtmgrpc"
 	proto2 "mxshop/api/goods/v1"
 	proto "mxshop/api/inventory/v1"
 	proto3 "mxshop/api/order/v1"
@@ -14,6 +13,8 @@ import (
 	v1 "mxshop/pkg/common/meta/v1"
 	"mxshop/pkg/errors"
 	"mxshop/pkg/log"
+
+	"github.com/dtm-labs/client/dtmgrpc"
 )
 
 type OrderSrv interface {
@@ -41,6 +42,7 @@ func (os *orderService) CreateCom(ctx context.Context, order *dto.OrderDTO) erro
 	return nil
 }
 
+// 真正执行订单创建的
 func (os *orderService) Create(ctx context.Context, order *dto.OrderDTO) error {
 	/*
 		1. 生成orderinfo表
@@ -52,29 +54,36 @@ func (os *orderService) Create(ctx context.Context, order *dto.OrderDTO) error {
 	for _, value := range order.OrderGoods {
 		goodsids = append(goodsids, value.Goods)
 	}
-
+	// return status.Error(codes.Aborted, "订单创建失败") //测试下是否会触发补偿
+	// 远程调用商品服务，批量查询商品信息
 	goods, err := os.data.Goods().BatchGetGoods(context.Background(), &proto2.BatchGoodsIdInfo{Id: goodsids})
 	if err != nil {
+		// 日志记录异常：查询失败+商品ID+错误信息
 		log.Errorf("批量获取商品信息失败，goodids: %v, err:%v", goodsids, err)
+		// 会触发dtm的重试
 		return err
 	}
+	// 校验：传入的商品ID数量 和 查询返回的商品数量不一致 → 部分/全部商品不存在
 	if len(goods.Data) != len(goodsids) {
 		log.Errorf("批量获取商品信息失败，goodids: %v, 返回值：%v, err:%v", goodsids, goods.Data, err)
+		// 抛出自定义业务错误：商品不存在
 		return errors.WithCode(code.ErrGoodsNotFound, "商品不存在或者部分不存在")
 	}
+	// 构建商品ID → 商品信息的Map，方便后续快速取值
 	var goodsMap = make(map[int32]*proto2.GoodsInfoResponse)
 	for _, value := range goods.Data {
 		goodsMap[value.Id] = value
 	}
-
+	// 初始化订单总金额
 	var orderAmount float32
+	// 遍历订单商品，计算总金额、补全商品名称/价格/图片等展示字段
 	for _, value := range order.OrderGoods {
 		orderAmount += goodsMap[value.Goods].ShopPrice * float32(value.Nums)
 		value.GoodsName = goodsMap[value.Goods].Name
 		value.GoodsPrice = goodsMap[value.Goods].ShopPrice
 		value.GoodsImage = goodsMap[value.Goods].GoodsFrontImage
 	}
-
+	// 开启本地数据库事务，保证订单创建、购物车删除原子性
 	txn := os.data.Begin()
 	defer func() {
 		if err := recover(); err != nil {
@@ -86,21 +95,26 @@ func (os *orderService) Create(ctx context.Context, order *dto.OrderDTO) error {
 
 	err = os.data.Orders().Create(ctx, txn, &order.OrderInfoDO)
 	if err != nil {
+		// 写入失败，手动回滚事务
 		txn.Rollback()
 		log.Errorf("创建订单失败，err:%v", err)
+		// 重点：直接返回原始error，未返回 gRPC codes.Aborted
+		// DTM 判定为临时异常，会**不断重试**当前分支
 		return err //这个不是abort 也就是说会不停的重试
 	}
-
+	// 事务内：根据用户ID+商品ID，删除对应购物车记录
 	err = os.data.ShopCarts().DeleteByGoodsIDs(ctx, txn, uint64(order.User), goodsids)
 	if err != nil {
 		txn.Rollback()
 		log.Errorf("删除购物车失败，goodids:%v, err:%v", goodsids, err)
+		// 同样返回原始error，DTM 会重试
 		return err
 	}
-
+	// 所有操作正常，提交本地事务，数据正式落地
 	txn.Commit()
-	//这里有逻辑
+	//这里没有逻辑
 	return nil
+	// 这块正常业务逻辑来看，其实不需要补偿，不用返回abort错误的
 }
 
 func (os *orderService) Get(ctx context.Context, orderSn string) (*dto.OrderDTO, error) {
@@ -126,6 +140,7 @@ func (os *orderService) List(ctx context.Context, userID uint64, meta v1.ListMet
 	return &ret, nil
 }
 
+// 主要用来提交saga事务的
 func (os *orderService) Submit(ctx context.Context, order *dto.OrderDTO) error {
 	//先从购物车中获取商品信息
 	list, err := os.data.ShopCarts().List(ctx, uint64(order.User), true, v1.ListMeta{}, []string{})
@@ -183,7 +198,7 @@ func (os *orderService) Submit(ctx context.Context, order *dto.OrderDTO) error {
 		Add(gBusi+"/Order/CreateOrder", gBusi+"/Order/CreateOrderCom", oReq)
 	saga.WaitResult = true
 	err = saga.Submit()
-	//通过OrderSn查询一下， 当前的状态如何状态一直值Submitted那么就你一直不要给前端返回， 如果是failed那么你提示给前端说下单失败，重新下单
+	//查询最终状态的话：通过OrderSn查询一下， 当前的状态如何状态一直值Submitted那么就你一直不要给前端返回， 如果是failed那么你提示给前端说下单失败，重新下单
 	return err
 }
 

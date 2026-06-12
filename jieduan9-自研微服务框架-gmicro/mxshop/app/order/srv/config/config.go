@@ -25,6 +25,7 @@ func New() *Config {
 		Server:       options.NewServerOptions(),
 		Telemetry:    options.NewTelemetryOptions(),
 		Registry:     options.NewRegistryOptions(),
+		Dtm:          options.NewDtmOptions(),
 	}
 }
 

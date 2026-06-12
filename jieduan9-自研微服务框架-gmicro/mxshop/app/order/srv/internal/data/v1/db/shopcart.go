@@ -6,10 +6,11 @@ import (
 	code2 "mxshop/gmicro/code"
 	"mxshop/pkg/errors"
 
-	"gorm.io/gorm"
 	v1 "mxshop/app/order/srv/internal/data/v1"
 	"mxshop/app/order/srv/internal/domain/do"
 	metav1 "mxshop/pkg/common/meta/v1"
+
+	"gorm.io/gorm"
 )
 
 type shopCarts struct {
@@ -101,6 +102,6 @@ func (sc *shopCarts) ClearCheck(ctx context.Context, userID uint64) error {
 
 // 删除选中商品的购物车记录， 下订单了
 // 从架构上来讲，这种实现有两种方案
-// 下单后， 直接执行删除购物车的记录，比较简单
-// 下单后什么都不做，直接给rocketmq发送一个消息，然后由rocketmq来执行删除购物车的记录
+// 01: 下单后， 直接执行删除购物车的记录，比较简单
+// 02: 下单后什么都不做，直接给rocketmq发送一个消息，然后由rocketmq消费者来执行删除购物车的记录
 var _ v1.ShopCartStore = &shopCarts{}

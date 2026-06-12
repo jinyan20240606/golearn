@@ -193,16 +193,19 @@ func main() {
 	// 开启saga事务
 	r.GET("start", func(c *gin.Context) {
 		req := gin.H{}
+		// DTM 服务端的 API 入口地址
 		dmtServer := "http://127.0.0.1:36789/api/dtmsvr"
 		qsBusi := "http://127.0.0.1:8089"
 		saga := dtmcli.NewSaga(dmtServer, shortuuid.New()).
 			// 顺序：user3先转出到user1，user1再转入
 			// 添加一个TransOut的子事务，正向操作为url: qsBusi+"/TransOut"， 逆向操作为url: qsBusi+"/TransOutCom"
+			// 3参为请求参数
 			Add(qsBusi+"/SagaBTransOut", qsBusi+"/SagaBTransOutCom", req).
 			// 添加一个TransIn的子事务，正向操作为url: qsBusi+"/TransOut"， 逆向操作为url: qsBusi+"/TransInCom"
+			// 3参为请求参数
 			Add(qsBusi+"/SagaBTransIn", qsBusi+"/SagaBTransInCom", req)
 		// 提交saga事务，dtm会完成所有的子事务/回滚所有的子事务
-		saga.WaitResult = true
+		saga.WaitResult = true // 等待事务的结果，否则默认是异步的，下面拿不到结果
 		err := saga.Submit()
 		if err != nil {
 			c.JSON(500, gin.H{"message": err.Error()})
