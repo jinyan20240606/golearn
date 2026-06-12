@@ -466,7 +466,7 @@ func DecrStock(c *gin.Context) {
     c.JSON(200, gin.H{"msg": "ok"})
 }
 ```
-## 第34周 订单服务重构，wire进行ioc控制
+## 第34周上： 订单服务重构
 
 
 ### 1-1 订单系统data层数据接口定义
@@ -518,3 +518,61 @@ func DecrStock(c *gin.Context) {
 
 - `jieduan9-自研微服务框架-gmicro/mxshop/app/order/client/client.go`创建client进行测试调试
 - 排查测试中的bug
+
+
+## 34周下：wire进行ioc控制
+
+### 2-1 什么是ioc？
+- 文档记录：`jieduan9-自研微服务框架-gmicro/mxshop/app/order/client/doc.go`
+
+- 控制反转 ioc(Inversion of Control )
+  - ioc的本质：把控制权，从代码内部反转交给到外部容器 / 调用方。就是类似于一个map容器负责调度管理各个依赖，降低函数内部频繁创建依赖的复杂度
+  - ![alt text](image-2.png)
+  - 工厂模式也算作一种控制反转，把创建依赖等控制权交给工厂了，不是自己创建了
+    - 如`jieduan9-自研微服务框架-gmicro/mxshop/app/mxshop/api/internal/service/service.go`工厂的相关使用
+    - `jieduan9-自研微服务框架-gmicro/mxshop/app/mxshop/api/router.go`中，直接使用工程创建好的依赖了，就不用在这单独手动创建各个依赖了
+  - 后面介绍更好的ioc框架，wire
+
+- 还有一个概念：DIP：依赖倒置
+  - 依赖倒置本质：高层模块不要依赖低层模块，二者都要依赖「抽象」；抽象不依赖细节，细节依赖抽象。
+  - 到底倒置了什么？
+    - 依赖关系倒置
+      - 原来：高层 → 低层（具体实现）
+      - 现在：高层 → 抽象 ← 低层
+  - **面向接口编程 是 依赖倒置原则 的主要落地手段。**
+    - 如封装gemicro框架中的底层服务发现库的接入不是内部写死依赖执行的，而是内部只上层传入的依赖鸭子接口去执行
+    - "mxshop/gmicro/registry/consul"这个不同服务发现库只放在外层用户去使用，进行传参到框架内部，
+    - 框架内部只判断是否符合我的鸭子接口，符合就调用，不关心你是什么库consul还是etcd
+      ```js
+      // 这是JS版的缩版实现：
+      // 1. 抽象层：稳定接口（不变）
+      interface IPay {
+        pay(): void;
+      }
+
+      // 2. 低层：具体实现 → 依赖抽象（细节依赖抽象）
+      class WechatPay implements IPay {}
+      class Alipay implements IPay {}
+
+      // 3. 高层：业务模块 → 依赖抽象，不依赖具体类
+      class OrderService {
+        private pay: IPay; // 只依赖接口
+
+        // 依赖注入：外部传入具体实现
+        constructor(pay: IPay) {
+          this.pay = pay;
+        }
+
+        createOrder() {
+          this.pay.pay(); // 只调用抽象定义的方法
+        }
+      }
+
+      // 使用：随意切换低层实现，高层代码一动不动
+      new OrderService(new WechatPay()).createOrder();
+      new OrderService(new Alipay()).createOrder();
+      ```
+
+
+### 2-2 ioc框架选型
+
