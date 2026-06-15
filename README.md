@@ -183,6 +183,28 @@
 ### 在课程中提到的docker技巧
 
 1. 服务器重启，自动启动容器`docker run -d --name nginx -p 80:80 --restart=always nginx`
+2. - 镜像名：hello-go ，容器命名为 myserver
+  - `docker run --rm -P --name myserver hello-go`
+  - -P（大写 P）
+    - 全称：--publish-all
+    - 作用：自动映射端口
+    - 读取镜像里 EXPOSE 声明的所有端口，随机分配宿主机高端口（32768~60999）做转发。
+    - 对比小写 -p：手动指定端口映射（生产常用）
+  - --rm
+    - 作用：容器停止 / 退出后，自动删除容器本身
+    - 适用：临时测试、一次性运行的容器，不用手动 docker rm 清理残留容器
+    - 注意：不要用于生产常驻服务，意外停服会直接销毁容器
+3. 多阶段构建的用法，全局搜索多阶段构建的用法
+4. `docker build -f build/Dockerfile  -t $REGISTRY/mxshop/myserver:\${version}.\${branch}`
+   1. 1. -t 镜像名称拆解
+      1. $REGISTRY → 镜像仓库地址 + 命名空间（私有仓库 / 组织）
+      2. mxshop/myserver → 镜像名称（唯一标识这个应用镜像）
+      3. v1.0.main → 冒号后面的都是标签（tag）（版本、环境、分支、构建编号）
+   2. 该阶段执行 Docker 镜像构建，指定自定义 Dockerfile 路径，并按「仓库 / 项目 / 服务：版本。分支」规则打镜像标签。
+   3. 转义 \${}
+      1. jenkins的流水线里，$ 是变量符；Shell 中也要用变量，因此反斜杠转义，最终传给 Shell 的是 ${version}、${branch}
+
+
 ## go语言中的常见规定
 ### 代码规范 
 uber开源的代码规范:https://github.com/xxjwxc/uber_go_guide_cn

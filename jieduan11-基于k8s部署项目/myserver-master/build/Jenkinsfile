@@ -1,0 +1,61 @@
+pipeline {
+    //     含义：任意可用 Jenkins 代理节点执行当前流水线。
+    // 作用：不指定固定机器，Jenkins 自动调度空闲节点运行任务。
+    // 拓展：
+    // agent { label 'linux-node' }：指定固定标签节点运行。
+    agent any
+    // triggers 通用 WebHook 触发器（重点）
+    // 使用 Generic WebHook 触发器，外部系统（Gitee/GitHub/ 脚本）发送 HTTP POST 请求即可触发 Jenkins 构建，不用手动点构建
+    triggers {
+        GenericTrigger(
+            causeString: 'Generic Cause',
+            genericVariables: [[
+              defaultValue: '',
+              key: 'branch_name',
+              regexpFilter: '',
+              value: '$.ref'
+            ]],
+            printContributedVariables: true,
+            printPostContent: true,
+            regexpFilterExpression: '',
+            regexpFilterText: '',
+            token: 'abc123',
+            tokenCredentialId: ''
+        )
+    }
+    // 定义全局环境变量，整个流水线所有 stage/steps 都能使用。
+    // Shell 中引用方式：$MY_VAR / ${ANOTHER_VAR}。
+    environment {
+        REGISTRY= "47.99.50.241:30002"
+    }
+    stages {
+        stage('docker login') {
+            steps {
+                echo '=================docker login================='
+                sh """
+                    docker login -u admin -p Harbor12345 http://$REGISTRY
+                """
+            }
+        }
+        stage('docker build') {
+            // 该阶段执行 Docker 镜像构建，指定自定义 Dockerfile 路径，并按「仓库 / 项目 / 服务：版本。分支」规则打镜像标签。
+            //    1. 该阶段执行 Docker 镜像构建，指定自定义 Dockerfile 路径，并按「仓库 / 项目 / 服务：版本。分支」规则打镜像标签。
+            //    2. 转义 \${}
+            //       1. jenkins的流水线里，$ 是变量符；Shell 中也要用变量，因此反斜杠转义，最终传给 Shell 的是 ${version}、${branch}
+            steps {
+                echo '=================docker build================='
+                sh """
+                    docker build -f build/Dockerfile  -t $REGISTRY/mxshop/myserver:\${version}.\${branch} .
+                """
+            }
+        }
+        stage('docker push') {
+            steps {
+                echo '=================docker push================='
+                sh """
+                    docker push $REGISTRY/mxshop/myserver:\${version}.\${branch}
+                """
+            }
+        }
+    }
+}
